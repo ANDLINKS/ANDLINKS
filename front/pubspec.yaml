@@ -35,6 +35,7 @@ flutter:
     - assets/sample/4.png
     - assets/sample/5.png
     - assets/sample/usdt.png
+    - assets/sample/ton.png
   
   # Fonts configuration
   fonts:

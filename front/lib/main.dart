@@ -319,6 +319,105 @@ class _HomePageState extends State<HomePage> {
                     const Row()
                   ]),
                 ),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(20),
+                  child: Column(children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Text('Buy',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w300,
+                              color: Color(0xFF818181),
+                              fontSize: 20,
+                            )),
+                        SizedBox(
+                          height: 20,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                Image.asset('assets/sample/1.png',
+                                    width: 20, height: 20, fit: BoxFit.contain),
+                                const SizedBox(width: 5),
+                                Image.asset('assets/sample/2.png',
+                                    width: 20, height: 20, fit: BoxFit.contain),
+                                const SizedBox(width: 5),
+                                Image.asset('assets/sample/3.png',
+                                    width: 20, height: 20, fit: BoxFit.contain),
+                                const SizedBox(width: 5),
+                                Image.asset('assets/sample/4.png',
+                                    width: 20, height: 20, fit: BoxFit.contain),
+                                const SizedBox(width: 5),
+                                Image.asset('assets/sample/5.png',
+                                    width: 20, height: 20, fit: BoxFit.contain),
+                              ],
+                            ),
+                          ),
+                        )
+                      ],
+                    ),
+                    const SizedBox(height: 15),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        const Text('1',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w500,
+                              fontSize: 30,
+                              color: Color(0xFFE4E4E4),
+                            )),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Image.asset('assets/sample/ton.png',
+                                width: 20, height: 20, fit: BoxFit.contain),
+                            const SizedBox(width: 8),
+                            const Text('ton',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w300,
+                                  color: Color(0xFFE4E4E4),
+                                  fontSize: 20,
+                                )),
+                            const SizedBox(width: 8),
+                            SvgPicture.asset(
+                              'assets/icons/select.svg',
+                              width: 5,
+                              height: 10,
+                              colorFilter: const ColorFilter.mode(
+                                Color(0xFFE4E4E4),
+                                BlendMode.srcIn,
+                              ),
+                            ),
+                          ],
+                        )
+                      ],
+                    ),
+                    const SizedBox(height: 15),
+                    const Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(r'$1',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 15,
+                                color: Color(0xFF818181),
+                              )),
+                          Text('On TON',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                                fontSize: 15,
+                                color: Color(0xFF818181),
+                              )),
+                        ]),
+                    const SizedBox(height: 15),
+                    const Row()
+                  ]),
+                ),
                 if (!_isFocused)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 20.0),
