@@ -1,11 +1,11 @@
-# bc1qbot
+# q1cbbot
 
 This is a monorepo containing multiple services.
 
 ## Repository Structure
 
 ```
-bc1qbot/
+q1cbbot/
 ├── front/          # Flutter frontend
 ├── ai/             # AI chat backend (FastAPI + Ollama)
 └── rag/            # RAG server (TON data RAG system) - TODO
