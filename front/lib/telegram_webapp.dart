@@ -203,6 +203,24 @@ class TelegramWebApp {
     }
   }
 
+  /// Get isFullscreen status
+  /// Returns true if the Mini App is in fullscreen mode, false otherwise
+  /// Returns null if Telegram WebApp is not available
+  bool? get isFullscreen {
+    try {
+      final app = webApp;
+      if (app == null) return null;
+
+      final isFullscreen = app['isFullscreen'];
+      if (isFullscreen is bool) {
+        return isFullscreen;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   /// Get the theme params (colors)
   Map<String, dynamic>? get themeParams {
     try {

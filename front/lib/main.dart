@@ -1187,8 +1187,15 @@ class _MyAppState extends State<MyApp> {
 }
 
 // Global logo bar widget that appears on all pages
-class GlobalLogoBar extends StatelessWidget {
+class GlobalLogoBar extends StatefulWidget {
   const GlobalLogoBar({super.key});
+
+  @override
+  State<GlobalLogoBar> createState() => _GlobalLogoBarState();
+
+  // Notifier for fullscreen status changes (to trigger content rebuilds)
+  static final ValueNotifier<bool> _fullscreenNotifier = ValueNotifier<bool>(true);
+  static ValueNotifier<bool> get fullscreenNotifier => _fullscreenNotifier;
 
   // Helper method to calculate logo top padding
   static double _getLogoTopPadding() {
@@ -1225,48 +1232,231 @@ class GlobalLogoBar extends StatelessWidget {
     return _getLogoTopPadding() + logoHeight + bottomPadding;
   }
 
+  /// Get the top padding for content based on logo visibility
+  /// Returns 10px when logo is hidden, otherwise logo block height + 10px
+  /// Uses the fullscreenNotifier to get current logo visibility state
+  static double getContentTopPadding() {
+    // Check if we're in browser or TMA
+    final telegramWebApp = TelegramWebApp();
+    final isInBrowser = !telegramWebApp.isAvailable;
+    
+    // In browser mode, logo is always visible, so content needs full padding
+    if (isInBrowser) {
+      final logoBlockHeight = getLogoBlockHeight();
+      final padding = logoBlockHeight + 10.0;
+      print('[GlobalLogoBar] Browser mode - content top padding: $padding (logoBlockHeight: $logoBlockHeight)');
+      return padding;
+    }
+    
+    // In TMA mode, check if logo is visible (fullscreen mode)
+    // If logo is hidden (not fullscreen), return minimal padding
+    final isFullscreen = _fullscreenNotifier.value;
+    if (!isFullscreen) {
+      print('[GlobalLogoBar] TMA not fullscreen - content top padding: 10.0');
+      return 10.0;
+    }
+    
+    // Logo is visible in TMA fullscreen mode, so content needs full padding
+    final logoBlockHeight = getLogoBlockHeight();
+    final padding = logoBlockHeight + 10.0;
+    print('[GlobalLogoBar] TMA fullscreen - content top padding: $padding (logoBlockHeight: $logoBlockHeight)');
+    return padding;
+  }
+
+  /// Check if logo should be visible
+  /// Logo is hidden when: in Telegram AND not in fullscreen
+  /// In browser (not Telegram): always show logo
+  static bool shouldShowLogo() {
+    final telegramWebApp = TelegramWebApp();
+    
+    // If not in Telegram (browser), always show logo
+    if (!telegramWebApp.isAvailable) {
+      return true; // Always show in browser
+    }
+    
+    // We're in Telegram - check isFullscreen
+    final isFullscreen = telegramWebApp.isFullscreen;
+    
+    // If isFullscreen is null or true, show logo (safe fallback to show)
+    // Only hide logo when explicitly not fullscreen (isFullscreen == false)
+    return isFullscreen ?? true;
+  }
+}
+
+class _GlobalLogoBarState extends State<GlobalLogoBar> with SingleTickerProviderStateMixin {
+  Timer? _checkTimer;
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize animation controller for zoom out effect
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeIn,
+    ));
+    
+    // Show logo by default, then check after 1 second
+    GlobalLogoBar._fullscreenNotifier.value = true;
+    _animationController.value = 1.0; // Start at full scale (visible)
+    
+    // Check immediately if in browser (don't wait 1 second)
+    final telegramWebApp = TelegramWebApp();
+    if (!telegramWebApp.isAvailable) {
+      // In browser, ensure logo is visible and notifier is set immediately
+      _checkAndUpdateLogoVisibility();
+    } else {
+      // In TMA, check after 1 second
+      _checkTimer = Timer(const Duration(seconds: 1), () {
+        _checkAndUpdateLogoVisibility();
+      });
+    }
+    
+    _setupViewportListener();
+  }
+
+  @override
+  void dispose() {
+    _checkTimer?.cancel();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  void _checkAndUpdateLogoVisibility() {
+    final telegramWebApp = TelegramWebApp();
+    
+    // If not in Telegram (browser), always show logo
+    if (!telegramWebApp.isAvailable) {
+      if (mounted) {
+        _animationController.forward(); // Ensure logo is visible
+        GlobalLogoBar._fullscreenNotifier.value = true;
+      }
+      return;
+    }
+    
+    // We're in Telegram - check isFullscreen
+    final isFullscreen = telegramWebApp.isFullscreen;
+    
+    // Hide logo only if explicitly not fullscreen (isFullscreen == false)
+    // If isFullscreen is null, default to showing (safe fallback)
+    final shouldShow = isFullscreen ?? true;
+    
+    if (mounted) {
+      // Animate zoom out when hiding, zoom in when showing
+      if (shouldShow) {
+        // Show logo - ensure animation is at full scale (1.0)
+        // Always set to 1.0 to ensure visibility, even if already there
+        if (_animationController.value < 1.0) {
+          _animationController.forward(); // Zoom in (show)
+        } else {
+          // Force update to ensure visibility
+          _animationController.value = 1.0;
+        }
+      } else {
+        // Hide logo - zoom out to 0.0
+        if (_animationController.value > 0.0) {
+          _animationController.reverse(); // Zoom out (hide)
+        }
+      }
+      
+      GlobalLogoBar._fullscreenNotifier.value = shouldShow;
+    }
+  }
+
+  void _updateFullscreenStatus() {
+    _checkAndUpdateLogoVisibility();
+  }
+
+  void _setupViewportListener() {
+    final telegramWebApp = TelegramWebApp();
+    if (telegramWebApp.isAvailable) {
+      telegramWebApp.onViewportChanged((data) {
+        _updateFullscreenStatus();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: SafeArea(
-        bottom: false,
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: double.infinity,
-            padding: EdgeInsets.only(
-                top: _getLogoTopPadding(),
-                bottom: 10,
-                left: 15,
-                right: 15),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: ValueListenableBuilder<String?>(
-                  valueListenable: AppTheme.colorSchemeNotifier,
-                  builder: (context, colorScheme, child) {
-                    return SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: SvgPicture.asset(
-                        AppTheme.isLightTheme
-                            ? 'assets/images/logo_light.svg'
-                            : 'assets/images/logo_dark.svg',
-                        width: 32,
-                        height: 32,
-                        key: const ValueKey('global_logo'),
+    return ValueListenableBuilder<String?>(
+      valueListenable: AppTheme.colorSchemeNotifier,
+      builder: (context, colorScheme, _) {
+        return AnimatedBuilder(
+          animation: _scaleAnimation,
+          builder: (context, child) {
+            // Hide widget completely when scale is very small (near 0)
+            // This prevents the container from taking up space
+            if (_scaleAnimation.value < 0.01) {
+              return const SizedBox.shrink();
+            }
+            
+            // Check if we're in browser or TMA
+            final telegramWebApp = TelegramWebApp();
+            final isInBrowser = !telegramWebApp.isAvailable;
+            
+            // Calculate logo block height for browser mode
+            final logoBlockHeight = GlobalLogoBar.getLogoBlockHeight();
+            
+            return Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                ignoring: _scaleAnimation.value < 0.5,
+                child: SafeArea(
+                  top: false,
+                  bottom: false,
+                  child: Material(
+                    color: isInBrowser ? AppTheme.backgroundColor : Colors.transparent,
+                    child: Container(
+                      width: double.infinity,
+                      height: isInBrowser ? logoBlockHeight : null,
+                      padding: EdgeInsets.only(
+                          top: GlobalLogoBar._getLogoTopPadding(),
+                          bottom: 10,
+                          left: 15,
+                          right: 15),
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 600),
+                          child: Transform.scale(
+                            scale: _scaleAnimation.value,
+                            alignment: Alignment.center,
+                            child: Opacity(
+                              opacity: _scaleAnimation.value.clamp(0.0, 1.0),
+                              child: SizedBox(
+                                width: 32,
+                                height: 32,
+                                child: SvgPicture.asset(
+                                  AppTheme.isLightTheme
+                                      ? 'assets/images/logo_light.svg'
+                                      : 'assets/images/logo_dark.svg',
+                                  width: 32,
+                                  height: 32,
+                                  key: const ValueKey('global_logo'),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
-                    );
-                  },
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
-        ),
-      ),
+            );
+          },
+        );
+      },
     );
   }
 }
@@ -1717,12 +1907,18 @@ class _SimpleMainPageState extends State<SimpleMainPage>
         },
         child: SafeArea(
           bottom: false,
-          child: Padding(
-            padding: EdgeInsets.only(
-                bottom: _getAdaptiveBottomPadding(),
-                top: GlobalLogoBar.getLogoBlockHeight() + 10, // Logo block height + 10px spacing
-                left: 15,
-                right: 15),
+          top: false, // Disable SafeArea top padding - we handle it manually
+          child: ValueListenableBuilder<bool>(
+            valueListenable: GlobalLogoBar.fullscreenNotifier,
+            builder: (context, isFullscreen, child) {
+              final topPadding = GlobalLogoBar.getContentTopPadding();
+              print('[SimpleMainPage] Applying content top padding: $topPadding');
+              return Padding(
+                padding: EdgeInsets.only(
+                    bottom: _getAdaptiveBottomPadding(),
+                    top: topPadding, // Dynamic padding based on logo visibility
+                    left: 15,
+                    right: 15),
             child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 600),
@@ -2391,6 +2587,8 @@ class _SimpleMainPageState extends State<SimpleMainPage>
                 ),
               ),
             ),
+              );
+            },
           ),
         ),
       ),
@@ -3962,11 +4160,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         },
         child: SafeArea(
           bottom: false,
-          child: Padding(
-            padding: EdgeInsets.only(
-                bottom: _getAdaptiveBottomPadding(),
-                top: GlobalLogoBar.getLogoBlockHeight() + 10),
-            child: Center(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: GlobalLogoBar.fullscreenNotifier,
+            builder: (context, isFullscreen, child) {
+              return Padding(
+                padding: EdgeInsets.only(
+                    bottom: _getAdaptiveBottomPadding(),
+                    top: GlobalLogoBar.getContentTopPadding()),
+                child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 600),
                 child: Column(
@@ -4795,6 +4996,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
             ),
+              );
+            },
           ),
         ),
       ),
@@ -5284,18 +5487,21 @@ class _NewPageState extends State<NewPage> with TickerProviderStateMixin {
         backgroundColor: AppTheme.backgroundColor,
         body: SafeArea(
           bottom: false,
-          child: Padding(
-            padding: EdgeInsets.only(
-                bottom: _getAdaptiveBottomPadding(),
-                top: GlobalLogoBar.getLogoBlockHeight() + 10),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 600),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: double.infinity,
-                  //padding: const EdgeInsets.all(15),
-                  child: Column(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: GlobalLogoBar.fullscreenNotifier,
+            builder: (context, isFullscreen, child) {
+              return Padding(
+                padding: EdgeInsets.only(
+                    bottom: _getAdaptiveBottomPadding(),
+                    top: GlobalLogoBar.getContentTopPadding()),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 600),
+                    child: SizedBox(
+                      width: double.infinity,
+                      height: double.infinity,
+                      //padding: const EdgeInsets.all(15),
+                      child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -5469,6 +5675,8 @@ class _NewPageState extends State<NewPage> with TickerProviderStateMixin {
                 ),
               ),
             ),
+              );
+            },
           ),
         ),
       ),
@@ -5686,11 +5894,14 @@ class _TradePageState extends State<TradePage> with TickerProviderStateMixin {
         },
         child: SafeArea(
           bottom: false,
-          child: Padding(
-            padding: EdgeInsets.only(
-                bottom: _getAdaptiveBottomPadding(),
-                top: GlobalLogoBar.getLogoBlockHeight() + 10),
-            child: Center(
+          child: ValueListenableBuilder<bool>(
+            valueListenable: GlobalLogoBar.fullscreenNotifier,
+            builder: (context, isFullscreen, child) {
+              return Padding(
+                padding: EdgeInsets.only(
+                    bottom: _getAdaptiveBottomPadding(),
+                    top: GlobalLogoBar.getContentTopPadding()),
+                child: Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 600),
                 child: Container(
@@ -5713,6 +5924,8 @@ class _TradePageState extends State<TradePage> with TickerProviderStateMixin {
                 ),
               ),
             ),
+              );
+            },
           ),
         ),
       ),
