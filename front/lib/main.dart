@@ -2118,6 +2118,42 @@ class _SimpleMainPageState extends State<SimpleMainPage>
                                 ),
                               ),
                               Expanded(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    SvgPicture.asset(
+                                      AppTheme.isLightTheme
+                                          ? 'assets/icons/menudva/earn_light.svg'
+                                          : 'assets/icons/menudva/earn_dark.svg',
+                                      width: 30,
+                                      height: 30,
+                                    ),
+                                    const SizedBox(height: 5),
+                                    SizedBox(
+                                      height: 15,
+                                      child: Center(
+                                        child: Text(
+                                          'Earn',
+                                          style: TextStyle(
+                                            fontFamily: 'Aeroport',
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppTheme.textColor,
+                                            height: 1.0,
+                                          ),
+                                          textHeightBehavior:
+                                              const TextHeightBehavior(
+                                            applyHeightToFirstAscent: false,
+                                            applyHeightToLastDescent: false,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
                                 child: GestureDetector(
                                   onTap: () {
                                     Navigator.push(
