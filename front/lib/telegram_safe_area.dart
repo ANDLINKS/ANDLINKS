@@ -235,6 +235,7 @@ class TelegramSafeAreaService {
   /// Get individual inset value from viewport signal
   /// These methods return signals with numeric values directly
   /// Uses the same pattern as _getSafeAreaFromTmaJs but for numeric values
+  // ignore: unused_element
   double _getInsetValue(String methodName) {
     try {
       if (!isTmaJsAvailable) {
@@ -324,7 +325,7 @@ class TelegramSafeAreaService {
       _addLog(
           '[_getInsetValue] Value not a number for $methodName: ${value.runtimeType}');
       return 0.0;
-    } catch (e, stackTrace) {
+    } catch (e) {
       _addLog('[_getInsetValue] Error: $e');
       return 0.0;
     }
@@ -597,7 +598,7 @@ class TelegramSafeAreaService {
 
       _addLog('[_mountViewport] mount is not a function');
       return false;
-    } catch (e, stackTrace) {
+    } catch (e) {
       _addLog('[_mountViewport] Error: $e');
       return false;
     }
@@ -741,7 +742,7 @@ class TelegramSafeAreaService {
       _addLog(
           '[_getSafeAreaFromTmaJs] Value is not JsObject: ${value.runtimeType}');
       return SafeAreaInsets.zero;
-    } catch (e, stackTrace) {
+    } catch (e) {
       _addLog('[_getSafeAreaFromTmaJs] Error: $e');
       return SafeAreaInsets.zero;
     }
@@ -799,7 +800,7 @@ class TelegramSafeAreaService {
       }
 
       return SafeAreaInsets.zero;
-    } catch (e, stackTrace) {
+    } catch (e) {
       _addLog('[_getSafeAreaDirect] Error: $e');
       return SafeAreaInsets.zero;
     }
@@ -820,6 +821,7 @@ class TelegramSafeAreaService {
 
   /// Get safe area - tries direct Telegram WebApp first (this worked before!), then TMA.js
   /// Always gets fresh values, doesn't use cached _currentSafeArea
+  // ignore: unused_element
   SafeAreaInsets _getSafeArea() {
     // Try direct Telegram WebApp access FIRST (this is how we got 20px!)
     final directResult = _getSafeAreaDirect();
