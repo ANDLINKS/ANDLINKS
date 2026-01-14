@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Dict
 import httpx
 import os
 import json
@@ -47,11 +47,7 @@ def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
 
 
 class ChatRequest(BaseModel):
-    message: str
-
-
-class ChatResponse(BaseModel):
-    response: str
+    messages: List[Dict[str, str]]  # Array of ChatMessage objects with role and content
 
 
 @app.get("/")
@@ -62,25 +58,43 @@ async def root():
 @app.post("/api/chat")
 async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
     """
-    Send a message to Ollama and return the AI response (streaming to avoid timeouts)
+    Send messages array to Ollama /api/chat and return streaming AI response
     Requires valid API key in X-API-Key header
+    Messages format: [{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]
     """
-    if not request.message or not request.message.strip():
-        raise HTTPException(status_code=400, detail="Message cannot be empty")
+    if not request.messages or len(request.messages) == 0:
+        raise HTTPException(status_code=400, detail="Messages array cannot be empty")
+    
+    # Validate messages format according to Ollama ChatMessage spec
+    validated_messages = []
+    for msg in request.messages:
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role", "")
+        content = msg.get("content", "")
+        # Validate role matches Ollama spec: system, user, assistant, tool
+        if role in ["system", "user", "assistant", "tool"] and content:
+            validated_messages.append({
+                "role": role,
+                "content": str(content).strip()
+            })
+    
+    if len(validated_messages) == 0:
+        raise HTTPException(status_code=400, detail="No valid messages found")
     
     async def generate_response():
         try:
-            # Call Ollama API with streaming enabled
+            # Call Ollama /api/chat endpoint with messages array (according to API spec)
             async with httpx.AsyncClient(timeout=60.0) as client:
                 async with client.stream(
                     "POST",
-                    f"{OLLAMA_URL}/api/generate",
+                    f"{OLLAMA_URL}/api/chat",
                     json={
                         "model": OLLAMA_MODEL,
-                        "prompt": request.message,
+                        "messages": validated_messages,  # Send messages array as per Ollama API spec
                         "stream": True,  # Enable streaming
                         "options": {
-                            "num_predict": 1000,  # Allow longer responses (increased from 100)
+                            "num_predict": 1000,  # Maximum tokens to generate
                             "temperature": 0.7,
                             "num_thread": 2,
                         }
@@ -103,17 +117,23 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
                         if line:
                             try:
                                 data = json.loads(line)
-                                if "response" in data:
-                                    token = data["response"]
-                                    full_response += token
-                                    # Send each token as it's generated
-                                    yield json.dumps({"token": token, "done": data.get("done", False)}) + "\n"
                                 
+                                # Ollama /api/chat streaming format: message.content contains partial text
+                                # According to ChatStreamEvent spec: message.content is "Partial assistant message text"
+                                if "message" in data and isinstance(data["message"], dict):
+                                    content = data["message"].get("content", "")
+                                    if content:
+                                        full_response += content
+                                        # Send each content chunk as it arrives
+                                        yield json.dumps({"token": content, "done": data.get("done", False)}) + "\n"
+                                
+                                # Check if stream is done
                                 if data.get("done", False):
                                     # Send final complete response
                                     yield json.dumps({"response": full_response, "done": True}) + "\n"
                                     break
-                            except json.JSONDecodeError:
+                            except json.JSONDecodeError as e:
+                                print(f"Warning: Failed to parse JSON line: {line[:100]}")
                                 continue
         
         except httpx.TimeoutException:

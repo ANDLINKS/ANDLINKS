@@ -5,10 +5,18 @@ WORKDIR /app
 # Install system dependencies for Ollama
 RUN apt-get update && apt-get install -y \
     curl \
+    zstd \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Ollama
-RUN curl -fsSL https://ollama.com/install.sh | sh
+# Install Ollama with error handling
+RUN set -e && \
+    curl -fsSL https://ollama.com/install.sh -o /tmp/install-ollama.sh && \
+    chmod +x /tmp/install-ollama.sh && \
+    /tmp/install-ollama.sh && \
+    rm /tmp/install-ollama.sh && \
+    echo "Checking Ollama installation..." && \
+    (which ollama || find /usr/local -name ollama -type f 2>/dev/null | head -1) && \
+    echo "Ollama installation completed"
 
 # Copy requirements and install dependencies
 COPY requirements.txt .

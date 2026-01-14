@@ -53,9 +53,10 @@ async def get_db_pool():
 
 
 async def init_db():
-    """Initialize database - create users table if it doesn't exist"""
+    """Initialize database - create users and messages tables if they don't exist"""
     pool = await get_db_pool()
     async with pool.acquire() as conn:
+        # Create users table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -69,11 +70,28 @@ async def init_db():
                 last_active_at TIMESTAMP DEFAULT ((now() AT TIME ZONE 'UTC') + INTERVAL '3 hours')
             )
         """)
-        # Create index on telegram_id for faster lookups
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id)
         """)
-        print("Database initialized: users table created/verified")
+        
+        # Create messages table for conversation history
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS messages (
+                id SERIAL PRIMARY KEY,
+                telegram_id BIGINT NOT NULL,
+                role VARCHAR(20) NOT NULL CHECK (role IN ('system', 'user', 'assistant')),
+                content TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT ((now() AT TIME ZONE 'UTC') + INTERVAL '3 hours'),
+                FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
+            )
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_messages_telegram_id ON messages(telegram_id)
+        """)
+        await conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(telegram_id, created_at ASC)
+        """)
+        print("Database initialized: users and messages tables created/verified")
 
 
 async def save_user_async(update: Update):
@@ -108,6 +126,46 @@ async def save_user_async(update: Update):
         print(f"Error saving user to database: {e}")
 
 
+async def save_message(telegram_id: int, role: str, content: str):
+    """Save a message to conversation history"""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            await conn.execute("""
+                INSERT INTO messages (telegram_id, role, content)
+                VALUES ($1, $2, $3)
+            """, telegram_id, role, content)
+    except Exception as e:
+        print(f"Error saving message to database: {e}")
+
+
+async def get_conversation_history(telegram_id: int, limit: int = 20) -> list:
+    """
+    Retrieve conversation history for a user
+    Returns list of dicts with 'role' and 'content' keys matching Ollama ChatMessage format
+    """
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT role, content
+                FROM messages
+                WHERE telegram_id = $1
+                ORDER BY created_at ASC
+                LIMIT $2
+            """, telegram_id, limit)
+            
+            # Convert to list of dicts in Ollama ChatMessage format: {role, content}
+            history = [
+                {"role": row["role"], "content": row["content"]} 
+                for row in rows
+            ]
+            return history
+    except Exception as e:
+        print(f"Error retrieving conversation history: {e}")
+        return []
+
+
 async def ensure_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler that ensures user exists in database (runs on all messages, non-blocking)"""
     # Run database operation asynchronously without blocking the response
@@ -129,8 +187,11 @@ async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
-async def stream_ai_response(message_text: str, bot, chat_id: int, message_id: int):
-    """Stream AI response and edit message as chunks arrive"""
+async def stream_ai_response(messages: list, bot, chat_id: int, message_id: int, telegram_id: int):
+    """
+    Stream AI response and edit message as chunks arrive
+    messages: List of message dicts with 'role' and 'content' (Ollama ChatMessage format)
+    """
     ai_backend_url = os.getenv('AI_BACKEND_URL')
     api_key = os.getenv('API_KEY')
     if not api_key:
@@ -139,13 +200,14 @@ async def stream_ai_response(message_text: str, bot, chat_id: int, message_id: i
     accumulated_text = ""
     last_edit_time = asyncio.get_event_loop().time()
     edit_interval = 1.0  # Edit message every 1 second to avoid rate limits
+    last_sent_text = ""  # Track last sent text to avoid "message not modified" errors
     
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             async with client.stream(
                 "POST",
                 f"{ai_backend_url}/api/chat",
-                json={"message": message_text},
+                json={"messages": messages},  # Send messages array according to Ollama API spec
                 headers={
                     "Content-Type": "application/json",
                     "X-API-Key": api_key
@@ -158,13 +220,21 @@ async def stream_ai_response(message_text: str, bot, chat_id: int, message_id: i
                         try:
                             data = json.loads(line)
                             if "error" in data:
-                                await bot.edit_message_text(
-                                    chat_id=chat_id,
-                                    message_id=message_id,
-                                    text=f"Error: {data['error']}"
-                                )
+                                error_text = f"Error: {data['error']}"
+                                if error_text != last_sent_text:
+                                    try:
+                                        await bot.edit_message_text(
+                                            chat_id=chat_id,
+                                            message_id=message_id,
+                                            text=error_text
+                                        )
+                                        last_sent_text = error_text
+                                    except TelegramError as e:
+                                        if "not modified" not in str(e).lower():
+                                            print(f"Warning: Could not edit message: {e}")
                                 return
                             
+                            # Parse streaming response: token field contains partial content
                             if "token" in data:
                                 accumulated_text += data["token"]
                             elif "response" in data:
@@ -175,17 +245,18 @@ async def stream_ai_response(message_text: str, bot, chat_id: int, message_id: i
                             if current_time - last_edit_time >= edit_interval:
                                 # Telegram message limit is 4096 characters
                                 display_text = accumulated_text[:4090] + "..." if len(accumulated_text) > 4090 else accumulated_text
-                                if display_text:  # Only edit if we have text
+                                if display_text and display_text != last_sent_text:
                                     try:
                                         await bot.edit_message_text(
                                             chat_id=chat_id,
                                             message_id=message_id,
                                             text=display_text
                                         )
+                                        last_sent_text = display_text
                                         last_edit_time = current_time
                                     except TelegramError as e:
-                                        # If editing fails (e.g., message too long or same content), continue
-                                        print(f"Warning: Could not edit message: {e}")
+                                        if "not modified" not in str(e).lower():
+                                            print(f"Warning: Could not edit message: {e}")
                             
                             if data.get("done", False):
                                 break
@@ -194,36 +265,68 @@ async def stream_ai_response(message_text: str, bot, chat_id: int, message_id: i
                 
                 # Final edit with complete response
                 final_text = accumulated_text[:4096] if len(accumulated_text) <= 4096 else accumulated_text[:4090] + "..."
-                if final_text:
-                    await bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        text=final_text
-                    )
-                else:
-                    await bot.edit_message_text(
-                        chat_id=chat_id,
-                        message_id=message_id,
-                        text="Sorry, I didn't receive a response."
-                    )
+                if final_text and final_text != last_sent_text:
+                    try:
+                        await bot.edit_message_text(
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            text=final_text
+                        )
+                        last_sent_text = final_text
+                    except TelegramError as e:
+                        if "not modified" not in str(e).lower():
+                            print(f"Warning: Could not edit final message: {e}")
+                
+                # Save assistant response to conversation history
+                if accumulated_text:
+                    asyncio.create_task(save_message(telegram_id, "assistant", accumulated_text))
+                
+                if not final_text:
+                    no_response_text = "Sorry, I didn't receive a response."
+                    if no_response_text != last_sent_text:
+                        try:
+                            await bot.edit_message_text(
+                                chat_id=chat_id,
+                                message_id=message_id,
+                                text=no_response_text
+                            )
+                            last_sent_text = no_response_text
+                        except TelegramError as e:
+                            if "not modified" not in str(e).lower():
+                                print(f"Warning: Could not edit message: {e}")
     except httpx.TimeoutException:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text="Sorry, the AI took too long to respond. Please try again."
-        )
+        error_text = "Sorry, the AI took too long to respond. Please try again."
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=error_text
+            )
+        except TelegramError as e:
+            if "not modified" not in str(e).lower():
+                print(f"Warning: Could not edit message: {e}")
     except httpx.RequestError as e:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=f"Sorry, I couldn't connect to the AI service. Error: {str(e)}"
-        )
+        error_text = f"Sorry, I couldn't connect to the AI service. Error: {str(e)}"
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=error_text
+            )
+        except TelegramError as e2:
+            if "not modified" not in str(e2).lower():
+                print(f"Warning: Could not edit message: {e2}")
     except Exception as e:
-        await bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=f"Sorry, an error occurred: {str(e)}"
-        )
+        error_text = f"Sorry, an error occurred: {str(e)}"
+        try:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=error_text
+            )
+        except TelegramError as e2:
+            if "not modified" not in str(e2).lower():
+                print(f"Warning: Could not edit message: {e2}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -237,15 +340,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not message_text or message_text.startswith('/'):
         return
     
+    telegram_id = update.effective_user.id
+    
+    # Retrieve conversation history (before saving current message)
+    history = await get_conversation_history(telegram_id, limit=20)
+    
+    # Build messages array according to Ollama API spec
+    # Start with system message if no history exists
+    messages = []
+    if not history:
+        messages.append({
+            "role": "system",
+            "content": "You are a helpful assistant. Pay attention to the conversation history and respond appropriately to follow-up questions and confirmations."
+        })
+    
+    # Add conversation history
+    messages.extend(history)
+    
+    # Add current user message
+    user_message = {"role": "user", "content": message_text}
+    messages.append(user_message)
+    
+    # Save user message to database (async, non-blocking)
+    asyncio.create_task(save_message(telegram_id, "user", message_text))
+    
     # Send initial "thinking" message
     sent_message = await update.message.reply_text("Thinking...")
     
     # Stream AI response and edit the message as chunks arrive
     await stream_ai_response(
-        message_text,
+        messages,
         context.bot,
         sent_message.chat_id,
-        sent_message.message_id
+        sent_message.message_id,
+        telegram_id
     )
 
 
