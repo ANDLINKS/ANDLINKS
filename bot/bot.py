@@ -75,6 +75,8 @@ async def init_db():
         """)
         
         # Create messages table for conversation history
+        # Each user's messages are stored separately using telegram_id as the key
+        # The composite index on (telegram_id, created_at) ensures efficient per-user history retrieval
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS messages (
                 id SERIAL PRIMARY KEY,
@@ -85,9 +87,11 @@ async def init_db():
                 FOREIGN KEY (telegram_id) REFERENCES users(telegram_id) ON DELETE CASCADE
             )
         """)
+        # Index for filtering messages by user (telegram_id)
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_messages_telegram_id ON messages(telegram_id)
         """)
+        # Composite index for efficient per-user history retrieval (ordered by timestamp)
         await conn.execute("""
             CREATE INDEX IF NOT EXISTS idx_messages_created_at ON messages(telegram_id, created_at ASC)
         """)
@@ -127,7 +131,10 @@ async def save_user_async(update: Update):
 
 
 async def save_message(telegram_id: int, role: str, content: str):
-    """Save a message to conversation history"""
+    """
+    Save a message to conversation history for a specific user
+    Messages are stored separately per user using telegram_id as the key
+    """
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
@@ -141,7 +148,8 @@ async def save_message(telegram_id: int, role: str, content: str):
 
 async def get_conversation_history(telegram_id: int, limit: int = 20) -> list:
     """
-    Retrieve conversation history for a user
+    Retrieve conversation history for a specific user (separated by telegram_id)
+    Each user's conversation is stored and fetched independently
     Returns list of dicts with 'role' and 'content' keys matching Ollama ChatMessage format
     """
     try:
@@ -182,7 +190,7 @@ async def hello(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await update.message.reply_text(
-        f"Hello, {update.effective_user.first_name}. That's Hype And Links, tap to enter",
+        f"Hello, {update.effective_user.first_name}. That's Hype And Links, tap to enter or write me anything to use AI in bot",
         reply_markup=reply_markup
     )
 
@@ -240,11 +248,17 @@ async def stream_ai_response(messages: list, bot, chat_id: int, message_id: int,
                             elif "response" in data:
                                 accumulated_text = data["response"]
                             
-                            # Edit message periodically to avoid rate limits
+                            # Edit message periodically to avoid rate limits (with signature)
                             current_time = asyncio.get_event_loop().time()
                             if current_time - last_edit_time >= edit_interval:
-                                # Telegram message limit is 4096 characters
-                                display_text = accumulated_text[:4090] + "..." if len(accumulated_text) > 4090 else accumulated_text
+                                signature = "\n\n***\n\nSincerely yours, @hypeandlinksbot"
+                                max_response_length = 4096 - len(signature)
+                                if len(accumulated_text) > max_response_length:
+                                    response_text = accumulated_text[:max_response_length - 3] + "..."
+                                else:
+                                    response_text = accumulated_text
+                                
+                                display_text = response_text + signature
                                 if display_text and display_text != last_sent_text:
                                     try:
                                         await bot.edit_message_text(
@@ -263,8 +277,17 @@ async def stream_ai_response(messages: list, bot, chat_id: int, message_id: int,
                         except json.JSONDecodeError:
                             continue
                 
-                # Final edit with complete response
-                final_text = accumulated_text[:4096] if len(accumulated_text) <= 4096 else accumulated_text[:4090] + "..."
+                # Final edit with complete response (add signature)
+                signature = "\n\n***\n\nSincerely yours, @hypeandlinksbot"
+                # Calculate available space for response (Telegram limit is 4096 chars)
+                max_response_length = 4096 - len(signature)
+                if len(accumulated_text) > max_response_length:
+                    response_text = accumulated_text[:max_response_length - 3] + "..."
+                else:
+                    response_text = accumulated_text
+                
+                final_text = response_text + signature
+                
                 if final_text and final_text != last_sent_text:
                     try:
                         await bot.edit_message_text(
@@ -277,7 +300,7 @@ async def stream_ai_response(messages: list, bot, chat_id: int, message_id: int,
                         if "not modified" not in str(e).lower():
                             print(f"Warning: Could not edit final message: {e}")
                 
-                # Save assistant response to conversation history
+                # Save assistant response to conversation history (without signature for context)
                 if accumulated_text:
                     asyncio.create_task(save_message(telegram_id, "assistant", accumulated_text))
                 

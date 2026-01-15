@@ -1,4 +1,6 @@
-AI interface
+logo fix
+AI bd
+AI UI
 Hovers
 Languages
 Favicon change
