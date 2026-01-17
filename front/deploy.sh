@@ -16,6 +16,10 @@ if ! command -v flutter &> /dev/null; then
     exit 1
 fi
 
+# Copy favicon to web directory (Flutter includes files from web/ in the build)
+echo "Copying favicon to web directory..."
+cp assets/favicon.ico web/favicon.ico
+
 # Build Flutter web app
 echo "Building Flutter web app..."
 flutter build web --release --base-href "//"
