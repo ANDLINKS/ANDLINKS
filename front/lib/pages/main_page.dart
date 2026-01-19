@@ -372,6 +372,17 @@ class _MainPageState extends State<MainPage>
                               const SizedBox(width: 15),
                               GestureDetector(
                                 onTap: () {
+                                  // Language action
+                                },
+                                child: SvgPicture.asset(
+                                  'assets/icons/ru.svg',
+                                  width: 30,
+                                  height: 30,
+                                ),
+                              ),
+                              const SizedBox(width: 15),
+                              GestureDetector(
+                                onTap: () {
                                   // Exit action
                                 },
                                 child: SvgPicture.asset(
