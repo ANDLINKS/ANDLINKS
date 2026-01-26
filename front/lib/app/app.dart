@@ -92,13 +92,10 @@ class _MyAppState extends State<MyApp> {
                   
                   // AI search overlay - positioned below logo bar
                   // Uses keyboard height to center options in visible area
-                  // AnimatedPositioned for smooth transitions
                   ValueListenableBuilder<double>(
                     valueListenable: KeyboardHeightService().heightNotifier,
                     builder: (context, keyboardHeight, child) {
-                      return AnimatedPositioned(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.easeOut,
+                      return Positioned(
                         top: GlobalLogoBar.getLogoBlockHeight(),
                         left: 0,
                         right: 0,
@@ -109,14 +106,11 @@ class _MyAppState extends State<MyApp> {
                     child: const AiSearchOverlay(),
                   ),
                   
-                  // Bottom bar overlay - moves with keyboard smoothly
-                  // AnimatedPositioned for smooth transitions
+                  // Bottom bar overlay - moves with keyboard
                   ValueListenableBuilder<double>(
                     valueListenable: KeyboardHeightService().heightNotifier,
                     builder: (context, keyboardHeight, child) {
-                      return AnimatedPositioned(
-                        duration: const Duration(milliseconds: 0),
-                        curve: Curves.easeOut,
+                      return Positioned(
                         bottom: keyboardHeight,
                         left: 0,
                         right: 0,
