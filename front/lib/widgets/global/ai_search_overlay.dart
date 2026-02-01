@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import '../../app/theme/app_theme.dart';
+import '../../utils/keyboard_height_service.dart';
 import '../../widgets/global/global_bottom_bar.dart';
 import '../../widgets/global/global_logo_bar.dart';
 import '../../utils/telegram_back_button.dart';
@@ -136,10 +139,9 @@ class _AiSearchOverlayState extends State<AiSearchOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    // NO MediaQuery reads - use Flutter's natural layout system
-    // This widget is now wrapped in Expanded, so it naturally compresses when keyboard opens
-    // The Column in app.dart ensures it fills available space between logo bar and bottom bar
-    
+    // Use both MediaQuery and KeyboardHeightService - overlay rebuilds when either changes
+    final mediaQueryKeyboard = MediaQuery.of(context).viewInsets.bottom;
+
     // Overlay is visible only when focused
     return Offstage(
       offstage: !_isFocused,
@@ -150,47 +152,57 @@ class _AiSearchOverlayState extends State<AiSearchOverlay> {
           behavior: HitTestBehavior.translucent,
           child: Material(
             color: AppTheme.backgroundColor,
-            child: Container(
-              width: double.infinity,
-              height: double.infinity,
-              color: AppTheme.backgroundColor,
-              // Center premade options - naturally adapts to available space
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 600),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 15),
-                    child: GestureDetector(
-                      onTap: () {},
-                      behavior: HitTestBehavior.opaque,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          // Premade input options
-                          ..._premadeOptions.map((option) => Padding(
-                                padding: const EdgeInsets.only(bottom: 20),
-                                child: GestureDetector(
-                                  onTap: () => _onOptionTap(option),
-                                  behavior: HitTestBehavior.opaque,
-                                  child: Text(
-                                    option,
-                                    textAlign: TextAlign.center,
-                                    style: TextStyle(
-                                      fontFamily: 'Aeroport',
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w500,
-                                      color: AppTheme.textColor,
-                                    ),
-                                  ),
-                                ),
-                              )),
-                        ],
-                      ),
+            child: SizedBox.expand(
+              child: ValueListenableBuilder<double>(
+                valueListenable: KeyboardHeightService().heightNotifier,
+                builder: (context, serviceKeyboard, _) {
+                  final keyboardBottom =
+                      math.max(mediaQueryKeyboard, serviceKeyboard);
+                  return Padding(
+                    padding: EdgeInsets.only(bottom: keyboardBottom),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.max,
+                      children: [
+                        const Spacer(flex: 1),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 600),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 15),
+                            child: GestureDetector(
+                              onTap: () {},
+                              behavior: HitTestBehavior.opaque,
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  ..._premadeOptions.map((option) => Padding(
+                                        padding: const EdgeInsets.only(bottom: 20),
+                                        child: GestureDetector(
+                                          onTap: () => _onOptionTap(option),
+                                          behavior: HitTestBehavior.opaque,
+                                          child: Text(
+                                            option,
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontFamily: 'Aeroport',
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w500,
+                                              color: AppTheme.textColor,
+                                            ),
+                                          ),
+                                        ),
+                                      )),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const Spacer(flex: 1),
+                      ],
                     ),
-                  ),
-                ),
+                  );
+                },
               ),
             ),
           ),

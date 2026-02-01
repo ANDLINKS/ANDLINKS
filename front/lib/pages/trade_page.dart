@@ -181,8 +181,8 @@ class _TradePageState extends State<TradePage> {
                         Expanded(
                           child: _TradeColumn(
                             imagePath: 'assets/sample/pixakats.svg',
-                            title: 'Pixakats',
-                            subtitle: 'Trade Pixakats',
+                            title: 'pixa kats',
+                            subtitle: 'Tandam',
                           ),
                         ),
                         const SizedBox(width: 15),
@@ -190,7 +190,7 @@ class _TradePageState extends State<TradePage> {
                           child: _TradeColumn(
                             imagePath: 'assets/sample/Haramarta.svg',
                             title: 'Haramarta',
-                            subtitle: 'Trade Haramarta',
+                            subtitle: 'Bid Raits',
                           ),
                         ),
                       ],

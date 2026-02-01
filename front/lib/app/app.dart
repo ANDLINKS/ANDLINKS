@@ -95,9 +95,8 @@ class _MyAppState extends State<MyApp> {
                   // Updates KeyboardHeightService.heightNotifier when keyboard height changes
                   _KeyboardHeightDetector(),
                   
-                  // AI search overlay - positioned below logo bar
-                  // Uses keyboard height to center options in visible area
-                  // Use fixed Positioned with LayoutBuilder to prevent Stack layout recalculation
+                  // AI search overlay - SAME mechanism as bottom bar: ValueListenableBuilder
+                  // directly under Positioned, listening to KeyboardHeightService
                   Positioned(
                     top: GlobalLogoBar.getLogoBlockHeight(),
                     left: 0,
@@ -108,10 +107,14 @@ class _MyAppState extends State<MyApp> {
                         return ValueListenableBuilder<double>(
                           valueListenable: KeyboardHeightService().heightNotifier,
                           builder: (context, keyboardHeight, child) {
-                            // Use SizedBox to adjust height instead of changing Positioned.bottom
-                            // This prevents Stack from recalculating layout when keyboard height changes
+                            final bottomBarHeight =
+                                GlobalBottomBar.getBottomBarHeight(null);
+                            final contentHeight = (constraints.maxHeight -
+                                    keyboardHeight -
+                                    bottomBarHeight)
+                                .clamp(0.0, constraints.maxHeight);
                             return SizedBox(
-                              height: constraints.maxHeight - keyboardHeight,
+                              height: contentHeight,
                               child: child ?? const AiSearchOverlay(),
                             );
                           },
@@ -283,16 +286,15 @@ class _KeyboardHeightDetectorState extends State<_KeyboardHeightDetector> {
     // But since it's isolated, the Stack doesn't rebuild
     final keyboardHeight = MediaQuery.of(context).viewInsets.bottom;
     
-    // Update service notifier only if value changed significantly (2px threshold)
-    // Using post-frame callback to avoid updating during build phase
-    // Use debounced update to prevent rapid rebuilds during keyboard animation
-    // Match the threshold in KeyboardHeightService.updateHeight() to avoid redundant checks
+    // Update service notifier when keyboard height changes (2px threshold)
     if ((_lastHeight - keyboardHeight).abs() >= 2.0) {
+      final newHeight = keyboardHeight;
+      _lastHeight = newHeight;
+      // Post-frame to avoid setState during build; both overlay and bottom bar
+      // listen to same notifier and will rebuild together
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
-          _lastHeight = keyboardHeight;
-          KeyboardHeightService().updateHeight(keyboardHeight);
-          print('[KeyboardHeightDetector] Keyboard height detected: ${keyboardHeight}px');
+          KeyboardHeightService().updateHeight(newHeight);
         }
       });
     }

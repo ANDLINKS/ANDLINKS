@@ -43,15 +43,25 @@ class KeyboardHeightService {
     
     _pendingHeight = height;
     _debounceTimer?.cancel();
-    
+
+    // Immediate update when keyboard opens (0 -> value) or closes (value -> 0)
+    // so overlay options and bottom bar re-center without delay
+    final isKeyboardOpenClose =
+        (height < 5 && _lastNotifiedHeight > 50) ||
+        (height > 50 && _lastNotifiedHeight < 5);
+    if (isKeyboardOpenClose) {
+      _lastNotifiedHeight = height;
+      _lastUpdateTime = now;
+      heightNotifier.value = height;
+      return;
+    }
+
     // CRITICAL: Longer debounce delay to prevent final slide when keyboard settles
     // When keyboard is animating, wait 300ms to ensure animation fully completes
-    // This prevents the Stack layout recalculation that causes the page slide
-    // If it's been a while since last update, update quickly (keyboard just opened/closed)
-    final debounceDelay = timeSinceLastUpdate > 500 
-        ? const Duration(milliseconds: 100)  // Quick update if keyboard just opened/closed
-        : const Duration(milliseconds: 300); // Longer delay during animation to prevent final slide
-    
+    final debounceDelay = timeSinceLastUpdate > 500
+        ? const Duration(milliseconds: 100)
+        : const Duration(milliseconds: 300);
+
     _debounceTimer = Timer(debounceDelay, () {
       // Double-check that height still changed significantly before updating
       // This prevents updates from stale pending values
