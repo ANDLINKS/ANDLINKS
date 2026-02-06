@@ -4,8 +4,127 @@ import 'dart:async';
 import 'package:flutter_telegram_miniapp/flutter_telegram_miniapp.dart' as tma;
 import '../app/theme/app_theme.dart';
 import '../widgets/global/global_logo_bar.dart';
+import '../widgets/common/edge_swipe_back.dart';
 import '../telegram_safe_area.dart';
 import '../telegram_webapp.dart';
+
+class _TradeFeedItem extends StatelessWidget {
+  const _TradeFeedItem({required this.item});
+
+  final Map<String, dynamic> item;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        SvgPicture.asset(
+          item['icon'] as String,
+          width: 40,
+          height: 40,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                height: 20,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    item['primaryText'] as String,
+                    style: TextStyle(
+                      fontFamily: 'Aeroport',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      color: AppTheme.textColor,
+                      height: 1.0,
+                    ),
+                    textHeightBehavior: const TextHeightBehavior(
+                      applyHeightToFirstAscent: false,
+                      applyHeightToLastDescent: false,
+                    ),
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 20,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    item['secondaryText'] as String,
+                    style: const TextStyle(
+                      fontFamily: 'Aeroport',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF818181),
+                      height: 1.0,
+                    ),
+                    textHeightBehavior: const TextHeightBehavior(
+                      applyHeightToFirstAscent: false,
+                      applyHeightToLastDescent: false,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            SizedBox(
+              height: 20,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  item['timestamp'] as String,
+                  style: TextStyle(
+                    fontFamily: 'Aeroport',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: AppTheme.textColor,
+                    height: 1.0,
+                  ),
+                  textAlign: TextAlign.right,
+                  textHeightBehavior: const TextHeightBehavior(
+                    applyHeightToFirstAscent: false,
+                    applyHeightToLastDescent: false,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 20,
+              child: item['rightText'] != null
+                  ? Align(
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        item['rightText'] as String,
+                        style: const TextStyle(
+                          fontFamily: 'Aeroport',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w400,
+                          color: Color(0xFF818181),
+                          height: 1.0,
+                        ),
+                        textAlign: TextAlign.right,
+                        textHeightBehavior: const TextHeightBehavior(
+                          applyHeightToFirstAscent: false,
+                          applyHeightToLastDescent: false,
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
 
 class _TradeColumn extends StatelessWidget {
   const _TradeColumn({
@@ -64,6 +183,31 @@ class TradePage extends StatefulWidget {
 }
 
 class _TradePageState extends State<TradePage> {
+  // Trade feed items (40x40 preview, same structure as main page feed)
+  List<Map<String, dynamic>> get _tradeFeedItems => [
+        {
+          'icon': 'assets/sample/items/1.svg',
+          'primaryText': 'Some walley',
+          'secondaryText': r'$777',
+          'timestamp': '1',
+          'rightText': r'$10,123',
+        },
+        {
+          'icon': 'assets/sample/items/2.svg',
+          'primaryText': 'Sty. ker',
+          'secondaryText': r'$537',
+          'timestamp': '2',
+          'rightText': r'$9,9999',
+        },
+        {
+          'icon': 'assets/sample/items/3.svg',
+          'primaryText': '4iza',
+          'secondaryText': r'$157',
+          'timestamp': '3',
+          'rightText': r'$7111',
+        },
+      ];
+
   void _handleBackButton() {
     if (mounted && Navigator.of(context).canPop()) {
       Navigator.of(context).pop();
@@ -71,6 +215,9 @@ class _TradePageState extends State<TradePage> {
   }
   
   StreamSubscription<tma.BackButton>? _backButtonSubscription;
+
+  // Scroll controller for main content
+  final ScrollController _mainScrollController = ScrollController();
 
   // Helper method to calculate adaptive bottom padding
   double _getAdaptiveBottomPadding() {
@@ -83,12 +230,22 @@ class _TradePageState extends State<TradePage> {
   }
 
 
+  // Update scroll indicator state
+  void _updateScrollIndicator() {
+    if (_mainScrollController.hasClients) {
+      setState(() {});
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    
-    // Background animation removed
-    
+
+    _mainScrollController.addListener(_updateScrollIndicator);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateScrollIndicator();
+    });
+
     // Set up back button using flutter_telegram_miniapp package
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try {
@@ -135,8 +292,9 @@ class _TradePageState extends State<TradePage> {
 
   @override
   void dispose() {
+    _mainScrollController.dispose();
     _backButtonSubscription?.cancel();
-    
+
     // Hide back button when leaving trade page
     try {
       tma.WebApp().backButton.hide();
@@ -151,28 +309,33 @@ class _TradePageState extends State<TradePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppTheme.backgroundColor,
-      body: Builder(
+      body: EdgeSwipeBack(
+        onBack: _handleBackButton,
+        child: Builder(
           builder: (context) {
-            // Calculate padding statically to avoid rebuilds when keyboard opens
-            // The logo visibility doesn't actually change when keyboard opens,
-            // so we don't need to listen to fullscreenNotifier here
-            return Padding(
-              padding: EdgeInsets.only(
-                  bottom: _getAdaptiveBottomPadding(),
-                  top: GlobalLogoBar.getContentTopPadding()),
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 600),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.only(
-                  top: 15,
-                  bottom: 15,
-                  left: 15,
-                  right: 15,
-                ),
-                child: Column(
+            final topPadding = GlobalLogoBar.getContentTopPadding();
+            final bottomPadding = _getAdaptiveBottomPadding();
+            return Stack(
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(
+                      bottom: bottomPadding,
+                      top: topPadding),
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 600),
+                      child: SingleChildScrollView(
+                        controller: _mainScrollController,
+                        child: Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.only(
+                            top: 15,
+                            bottom: 15,
+                            left: 15,
+                            right: 15,
+                          ),
+                          child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -319,13 +482,108 @@ class _TradePageState extends State<TradePage> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 22),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'COLLECTION / FLOOR',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 21 / 11,
+                            color: const Color(0xFF818181),
+                          ),
+                        ),
+                        Text(
+                          'PLACE / VOL',
+                          style: TextStyle(
+                            fontSize: 11,
+                            height: 21 / 11,
+                            color: const Color(0xFF818181),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 22),
+                    // Feed-style blocks (same as main page, 40x40 preview)
+                    ..._tradeFeedItems.asMap().entries.expand((entry) {
+                      final index = entry.key;
+                      final item = entry.value;
+                      return [
+                        if (index > 0) const SizedBox(height: 22),
+                        _TradeFeedItem(item: item),
+                      ];
+                    }),
+                    const SizedBox(height: 22),
                   ],
                 ),
               ),
             ),
           ),
-          );
+        ),
+      ),
+                // Scroll indicator - same as main page
+                Positioned(
+                  right: 5,
+                  top: GlobalLogoBar.getContentTopPadding(),
+                  bottom: bottomPadding,
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final containerHeight = constraints.maxHeight;
+                      if (containerHeight <= 0 ||
+                          !_mainScrollController.hasClients) {
+                        return const SizedBox.shrink();
+                      }
+
+                      try {
+                        final position = _mainScrollController.position;
+                        final maxScroll = position.maxScrollExtent;
+                        final currentScroll = position.pixels;
+                        final viewportHeight = position.viewportDimension;
+                        final totalHeight = viewportHeight + maxScroll;
+
+                        if (maxScroll <= 0 || totalHeight <= 0) {
+                          return const SizedBox.shrink();
+                        }
+
+                        final indicatorHeightRatio =
+                            (viewportHeight / totalHeight).clamp(0.0, 1.0);
+                        final indicatorHeight =
+                            (containerHeight * indicatorHeightRatio)
+                                .clamp(0.0, containerHeight);
+
+                        if (indicatorHeight <= 0) {
+                          return const SizedBox.shrink();
+                        }
+
+                        final scrollPosition =
+                            (currentScroll / maxScroll).clamp(0.0, 1.0);
+                        final availableSpace = (containerHeight - indicatorHeight)
+                            .clamp(0.0, containerHeight);
+                        final topPosition = (scrollPosition * availableSpace)
+                            .clamp(0.0, containerHeight);
+
+                        return Align(
+                          alignment: Alignment.topCenter,
+                          child: Padding(
+                            padding: EdgeInsets.only(top: topPosition),
+                            child: Container(
+                              width: 1,
+                              height: indicatorHeight,
+                              color: const Color(0xFF818181),
+                            ),
+                          ),
+                        );
+                      } catch (e) {
+                        return const SizedBox.shrink();
+                      }
+                    },
+                  ),
+                ),
+              ],
+            );
           },
+        ),
         ),
     );
   }

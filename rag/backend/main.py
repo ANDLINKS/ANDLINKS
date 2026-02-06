@@ -43,6 +43,167 @@ def load_projects() -> List[Dict[str, Any]]:
 def save_projects(projects: List[Dict[str, Any]]) -> None:
     with open(PROJECTS_STORE_PATH, "w", encoding="utf-8") as f:
         f.write(json.dumps(projects, ensure_ascii=False, indent=2))
+def _normalize_symbol(symbol: str) -> str:
+    if symbol is None:
+        return ""
+    cleaned = symbol.replace("$", "").replace(" ", "").strip()
+    return cleaned.upper()
+
+def fetch_token_by_symbol(symbol: str) -> Dict[str, Any]:
+    qs = urllib.parse.urlencode({"search": symbol, "size": 10, "verification": TOKENS_VERIFICATION})
+    url = f"{TOKENS_API_URL}/api/v3/jettons?{qs}"
+    started = time.monotonic()
+    try:
+        req = urllib.request.Request(url)
+        if TOKENS_API_KEY:
+            req.add_header("X-Api-Key", TOKENS_API_KEY)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            status = getattr(resp, "status", 200)
+            body = resp.read().decode("utf-8", errors="ignore")
+            if status != 200:
+                return {
+                    "error": "unavailable",
+                    "reason": "non_200",
+                    "status_code": status,
+                    "response_snippet": body[:200],
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "source": "swap.coffee",
+                }
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                return {
+                    "error": "unavailable",
+                    "reason": "json_parse",
+                    "status_code": status,
+                    "response_snippet": body[:200],
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "source": "swap.coffee",
+                }
+            if not isinstance(data, list):
+                return {
+                    "error": "unavailable",
+                    "reason": "unexpected_payload",
+                    "status_code": status,
+                    "response_snippet": body[:200],
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "source": "swap.coffee",
+                }
+            for item in data:
+                if str(item.get("symbol", "")).upper() == symbol:
+                    return {"data": item, "elapsed_ms": int((time.monotonic() - started) * 1000)}
+            if not data:
+                return {
+                    "error": "not_found",
+                    "symbol": symbol,
+                    "source": "swap.coffee",
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                }
+            return {"data": data[0], "elapsed_ms": int((time.monotonic() - started) * 1000)}
+    except urllib.error.HTTPError as e:
+        return {
+            "error": "unavailable",
+            "reason": "http_error",
+            "status_code": e.code,
+            "response_snippet": (e.read().decode("utf-8", errors="ignore")[:200] if hasattr(e, "read") else ""),
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "source": "swap.coffee",
+        }
+    except urllib.error.URLError:
+        return {
+            "error": "unavailable",
+            "reason": "connection",
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "source": "swap.coffee",
+        }
+    except Exception:
+        return {
+            "error": "unavailable",
+            "reason": "unknown",
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "source": "swap.coffee",
+        }
+
+def _normalize_symbol(symbol: str) -> str:
+    if symbol is None:
+        return ""
+    cleaned = symbol.replace("$", "").replace(" ", "").strip()
+    return cleaned.upper()
+
+def fetch_token_by_symbol(symbol: str) -> Dict[str, Any]:
+    qs = urllib.parse.urlencode({"search": symbol, "size": 10, "verification": TOKENS_VERIFICATION})
+    url = f"{TOKENS_API_URL}/api/v3/jettons?{qs}"
+    started = time.monotonic()
+    try:
+        req = urllib.request.Request(url)
+        if TOKENS_API_KEY:
+            req.add_header("X-Api-Key", TOKENS_API_KEY)
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            status = getattr(resp, "status", 200)
+            body = resp.read().decode("utf-8", errors="ignore")
+            if status != 200:
+                return {
+                    "error": "unavailable",
+                    "reason": "non_200",
+                    "status_code": status,
+                    "response_snippet": body[:200],
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "source": "swap.coffee",
+                }
+            try:
+                data = json.loads(body)
+            except json.JSONDecodeError:
+                return {
+                    "error": "unavailable",
+                    "reason": "json_parse",
+                    "status_code": status,
+                    "response_snippet": body[:200],
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "source": "swap.coffee",
+                }
+            if not isinstance(data, list):
+                return {
+                    "error": "unavailable",
+                    "reason": "unexpected_payload",
+                    "status_code": status,
+                    "response_snippet": body[:200],
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                    "source": "swap.coffee",
+                }
+            for item in data:
+                if str(item.get("symbol", "")).upper() == symbol:
+                    return {"data": item, "elapsed_ms": int((time.monotonic() - started) * 1000)}
+            if not data:
+                return {
+                    "error": "not_found",
+                    "symbol": symbol,
+                    "source": "swap.coffee",
+                    "elapsed_ms": int((time.monotonic() - started) * 1000),
+                }
+            return {"data": data[0], "elapsed_ms": int((time.monotonic() - started) * 1000)}
+    except urllib.error.HTTPError as e:
+        return {
+            "error": "unavailable",
+            "reason": "http_error",
+            "status_code": e.code,
+            "response_snippet": (e.read().decode("utf-8", errors="ignore")[:200] if hasattr(e, "read") else ""),
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "source": "swap.coffee",
+        }
+    except urllib.error.URLError:
+        return {
+            "error": "unavailable",
+            "reason": "connection",
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "source": "swap.coffee",
+        }
+    except Exception:
+        return {
+            "error": "unavailable",
+            "reason": "unknown",
+            "elapsed_ms": int((time.monotonic() - started) * 1000),
+            "source": "swap.coffee",
+        }
 
 def _normalize_symbol(symbol: str) -> str:
     if symbol is None:
@@ -179,6 +340,7 @@ async def get_token(symbol: str):
         "verification": _verification_values(),
     }
     source_url = f"{TOKENS_API_URL}/api/v3/jettons?{urllib.parse.urlencode(source_params, doseq=True)}"
+    source_url = f"{TOKENS_API_URL}/api/v3/jettons?search={urllib.parse.quote(normalized)}"
 
     if not normalized or not (2 <= len(normalized) <= 10):
         return {
@@ -308,6 +470,45 @@ async def query(req: QueryRequest):
         snippet = item["text"][:800]
         context.append(snippet)
         sources.append(item.get("source", "unknown"))
+
+    # If no doc hits, try lightweight project matching
+    if len(top) == 0 and q_words:
+        projects = load_projects()
+        proj_scored = []
+        for p in projects:
+            name = str(p.get("name", ""))
+            desc = str(p.get("description", ""))
+            tags = p.get("tags", [])
+            tag_text = " ".join([str(t) for t in tags]) if isinstance(tags, list) else ""
+            haystack = f"{name} {desc} {tag_text}".lower()
+            overlap = sum(1 for w in q_words if w in haystack)
+            if overlap > 0:
+                proj_scored.append((overlap, p))
+
+        proj_scored.sort(key=lambda x: x[0], reverse=True)
+        top_projects = [x[1] for x in proj_scored[: req.top_k]]
+
+        for p in top_projects:
+            name = p.get("name", "Unknown project")
+            desc = p.get("description") or ""
+            tags = p.get("tags") or []
+            tag_text = ", ".join([str(t) for t in tags]) if isinstance(tags, list) else ""
+            snippet_parts = [str(name)]
+            if desc:
+                snippet_parts.append(f"- {desc}")
+            if tag_text:
+                snippet_parts.append(f"(tags: {tag_text})")
+            context.append(" ".join(snippet_parts)[:800])
+
+            source_name = "allowlist"
+            proj_sources = p.get("sources")
+            if isinstance(proj_sources, list) and proj_sources:
+                source_name = proj_sources[0].get("source_name", source_name)
+            sources.append({
+                "source_name": source_name,
+                "project_id": p.get("id"),
+                "official_links": p.get("official_links", {}),
+            })
 
     return {"context": context, "sources": sources}
 

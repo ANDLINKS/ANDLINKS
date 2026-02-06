@@ -45,14 +45,10 @@ class GlobalBottomBar extends StatefulWidget {
     return _controllerInstance?.text ?? '';
   }
 
-  // Static method to get the bottom bar height including padding and SafeArea
-  // Container padding: top: 10, bottom: 15 (total 25px)
-  // TextField minHeight: 30px
-  // SafeArea bottom padding is NOT included - let Flutter handle it naturally
+  // Static method to get the bottom bar height (full bar undercovered by background)
+  // Bar height: 22 top + 15 line + 22 bottom = 59px
   static double getBottomBarHeight(BuildContext? context) {
-    // Base height: container padding (10 + 15) + TextField minHeight (30)
-    // NO MediaQuery reads - let Flutter's layout system handle SafeArea naturally
-    return 10.0 + 30.0 + 15.0;
+    return 22.0 + 15.0 + 22.0; // 59px
   }
 }
 
@@ -122,157 +118,157 @@ class _GlobalBottomBarState extends State<GlobalBottomBar> {
 
   @override
   Widget build(BuildContext context) {
-    // NO MediaQuery reads - use Flutter's natural layout system
-    // This widget is now part of a Column, so it naturally moves up when keyboard opens
-    // The TextField inside will trigger keyboard, and Flutter's layout system handles the rest
+    // Bar: fixed 59px height (22 top + 15 line + 22 bottom), fully undercovered by background.
+    // Text is 15px line height with 22px top/bottom padding, vertically centered in the bar.
+    const double barHeight = 59.0; // 22 + 15 line + 22
     return Material(
       color: Colors.transparent,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.only(top: 10, bottom: 15),
-        // Don't use SafeArea - it reads MediaQuery and causes rebuilds
-        // Bottom safe area is handled via TelegramSafeAreaService in page padding calculations
+        height: barHeight,
+        color: AppTheme.backgroundColor,
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 600),
             child: Padding(
-                padding: const EdgeInsets.only(left: 15, right: 15),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Container(
-                        constraints: const BoxConstraints(minHeight: 30),
+              padding: const EdgeInsets.only(left: 15, right: 15),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(
+                    child: SizedBox(
+                      height: barHeight,
+                      child: Center(
                         child: _controller.text.isEmpty
-                      ? SizedBox(
-                          height: 30,
-                          child: TextField(
-                            key: _textFieldKey,
-                            controller: _controller,
-                            focusNode: _focusNode,
-                            enabled: true,
-                            readOnly: false,
-                            showCursor: true,
-                            enableInteractiveSelection: true,
-                            cursorColor: AppTheme.textColor,
-                            cursorHeight: 15,
-                            maxLines: 11,
-                            minLines: 1,
-                            textAlignVertical: TextAlignVertical.center,
-                            style: TextStyle(
+                          ? TextField(
+                              key: _textFieldKey,
+                              controller: _controller,
+                              focusNode: _focusNode,
+                              enabled: true,
+                              readOnly: false,
+                              showCursor: true,
+                              enableInteractiveSelection: true,
+                              cursorColor: AppTheme.textColor,
+                              cursorHeight: 15,
+                              maxLines: 11,
+                              minLines: 1,
+                              textAlignVertical: TextAlignVertical.center,
+                              style: TextStyle(
                                 fontFamily: 'Aeroport',
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,
-                                height: 2.0,
-                                color: AppTheme.textColor),
-                            onSubmitted: (value) {
-                              _navigateToNewPage();
-                            },
-                            onChanged: (value) {},
-                            decoration: InputDecoration(
-                              hintText: (_isFocused ||
-                                      _controller.text.isNotEmpty)
-                                  ? null
-                                  : 'AI & Search',
-                              hintStyle: TextStyle(
+                                height: 1.0,
+                                color: AppTheme.textColor,
+                              ),
+                              onSubmitted: (value) {
+                                _navigateToNewPage();
+                              },
+                              onChanged: (value) {},
+                              decoration: InputDecoration(
+                                hintText: (_isFocused ||
+                                        _controller.text.isNotEmpty)
+                                    ? null
+                                    : 'AI & Search',
+                                hintStyle: TextStyle(
                                   color: AppTheme.textColor,
                                   fontFamily: 'Aeroport',
                                   fontSize: 15,
                                   fontWeight: FontWeight.w500,
-                                  height: 2.0),
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              isDense: true,
-                              contentPadding: !_isFocused
-                                  ? const EdgeInsets.only(
-                                      left: 0,
-                                      right: 0,
-                                      top: 5,
-                                      bottom: 5)
-                                  : const EdgeInsets.only(right: 0),
-                            ),
-                          ),
-                        )
-                      : Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: TextField(
-                            key: _textFieldKey,
-                            controller: _controller,
-                            focusNode: _focusNode,
-                            enabled: true,
-                            readOnly: false,
-                            showCursor: true,
-                            enableInteractiveSelection: true,
-                            cursorColor: AppTheme.textColor,
-                            cursorHeight: 15,
-                            maxLines: 11,
-                            minLines: 1,
-                            textAlignVertical: _controller.text
-                                        .split('\n')
-                                        .length ==
-                                    1
-                                ? TextAlignVertical.center
-                                : TextAlignVertical.bottom,
-                            style: TextStyle(
+                                  height: 1.0,
+                                ),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                isDense: true,
+                                contentPadding: const EdgeInsets.only(
+                                  left: 0,
+                                  right: 0,
+                                  top: 22,
+                                  bottom: 22,
+                                ),
+                              ),
+                            )
+                          : TextField(
+                              key: _textFieldKey,
+                              controller: _controller,
+                              focusNode: _focusNode,
+                              enabled: true,
+                              readOnly: false,
+                              showCursor: true,
+                              enableInteractiveSelection: true,
+                              cursorColor: AppTheme.textColor,
+                              cursorHeight: 15,
+                              maxLines: 11,
+                              minLines: 1,
+                              textAlignVertical: _controller.text
+                                      .split('\n')
+                                      .length ==
+                                  1
+                                  ? TextAlignVertical.center
+                                  : TextAlignVertical.bottom,
+                              style: TextStyle(
                                 fontFamily: 'Aeroport',
                                 fontSize: 15,
                                 fontWeight: FontWeight.w500,
-                                height: 2,
-                                color: AppTheme.textColor),
-                            onSubmitted: (value) {
-                              _navigateToNewPage();
-                            },
-                            onChanged: (value) {},
-                            decoration: InputDecoration(
-                              hintText: (_isFocused ||
-                                      _controller.text.isNotEmpty)
-                                  ? null
-                                  : 'AI & Search',
-                              hintStyle: TextStyle(
+                                height: 1.0,
+                                color: AppTheme.textColor,
+                              ),
+                              onSubmitted: (value) {
+                                _navigateToNewPage();
+                              },
+                              onChanged: (value) {},
+                              decoration: InputDecoration(
+                                hintText: (_isFocused ||
+                                        _controller.text.isNotEmpty)
+                                    ? null
+                                    : 'AI & Search',
+                                hintStyle: TextStyle(
                                   color: AppTheme.textColor,
                                   fontFamily: 'Aeroport',
                                   fontSize: 15,
                                   fontWeight: FontWeight.w500,
-                                  height: 2),
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              isDense: true,
-                              contentPadding: _controller.text
-                                          .split('\n')
-                                          .length >
-                                      1
-                                  ? const EdgeInsets.only(
-                                      left: 0, right: 0, top: 11)
-                                  : const EdgeInsets.only(right: 0),
+                                  height: 1.0,
+                                ),
+                                border: InputBorder.none,
+                                enabledBorder: InputBorder.none,
+                                focusedBorder: InputBorder.none,
+                                isDense: true,
+                                contentPadding: _controller.text
+                                            .split('\n')
+                                            .length >
+                                        1
+                                    ? const EdgeInsets.only(
+                                        left: 0, right: 0, top: 22, bottom: 22)
+                                    : const EdgeInsets.only(
+                                        left: 0,
+                                        right: 0,
+                                        top: 22,
+                                        bottom: 22,
+                                      ),
+                              ),
                             ),
-                          ),
-                        ),
                       ),
                     ),
-                    const SizedBox(width: 5),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 7.5),
-                      child: GestureDetector(
-                        onTap: () {
-                          _navigateToNewPage();
-                        },
-                        child: SvgPicture.asset(
-                          AppTheme.isLightTheme
-                              ? 'assets/icons/apply_light.svg'
-                              : 'assets/icons/apply_dark.svg',
-                          width: 15,
-                          height: 10,
-                        ),
-                      ),
+                  ),
+                  const SizedBox(width: 5),
+                  GestureDetector(
+                    onTap: () {
+                      _navigateToNewPage();
+                    },
+                    child: SvgPicture.asset(
+                      AppTheme.isLightTheme
+                          ? 'assets/icons/apply_light.svg'
+                          : 'assets/icons/apply_dark.svg',
+                      width: 15,
+                      height: 10,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ),
         ),
+      ),
     );
   }
 }

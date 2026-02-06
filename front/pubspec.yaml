@@ -25,12 +25,14 @@ flutter:
   
   # Assets folder (for images used in Flutter code)
   assets:
+    - assets/favicon.ico
     - assets/images/
     - assets/icons/
     - assets/icons/menu/
     - assets/icons/menudva/
     - assets/sample/
     - assets/sample/mak/
+    - assets/sample/items/
   
   # Fonts configuration
   fonts:
