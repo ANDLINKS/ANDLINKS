@@ -147,6 +147,10 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
                             status_code = r.status_code
                             response_text = r.text[:200]
                             rag_url_s = sanitize_url(RAG_URL)
+                            if status_code != 200:
+                                print(f"[ticker] non_200 symbol={ticker_symbol} rag_url={rag_url_s} url={request_url} status={status_code} elapsed_ms={elapsed_ms} response_snippet={response_text}")
+                                ticker_error_response = "provider_unavailable"
+                                raise RuntimeError("non_200")
 
                             data = None
                             try:
@@ -164,10 +168,6 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
                                     ticker_error_response = "provider_unavailable"
                                 else:
                                     token_facts = data
-                            else:
-                                if status_code != 200:
-                                    print(f"[ticker] non_200 symbol={ticker_symbol} rag_url={rag_url_s} url={request_url} status={status_code} elapsed_ms={elapsed_ms} response_snippet={response_text}")
-                                    ticker_error_response = "provider_unavailable"
                         except Exception as e:
                             print(f"[ticker] exception symbol={ticker_symbol} rag_url={sanitize_url(RAG_URL)} error={type(e).__name__}:{e}")
                             ticker_error_response = "provider_unavailable"
