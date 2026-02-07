@@ -3,7 +3,7 @@ import asyncio
 import json
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, CallbackQueryHandler, filters
 from telegram.error import Conflict, TelegramError
 import asyncpg
 import httpx
@@ -13,6 +13,25 @@ load_dotenv()
 
 # Database connection pool
 _db_pool = None
+_message_prompt_map = {}
+
+BASE_SYSTEM_PROMPT = (
+    "You are a helpful assistant. Pay attention to the conversation history and respond "
+    "appropriately to follow-up questions and confirmations."
+)
+
+LANGUAGE_SYSTEM_HINT = {
+    "en": "Respond in English.",
+    "ru": "Respond in Russian."
+}
+
+
+def build_language_keyboard(message_id: int) -> InlineKeyboardMarkup:
+    keyboard = [[
+        InlineKeyboardButton("EN", callback_data=f"lang:en:{message_id}"),
+        InlineKeyboardButton("RU", callback_data=f"lang:ru:{message_id}")
+    ]]
+    return InlineKeyboardMarkup(keyboard)
 
 
 async def get_db_pool():
@@ -174,6 +193,24 @@ async def get_conversation_history(telegram_id: int, limit: int = 5) -> list:
         return []
 
 
+async def get_last_message_by_role(telegram_id: int, role: str) -> str | None:
+    """Fetch latest message content for a user by role."""
+    try:
+        pool = await get_db_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow("""
+                SELECT content
+                FROM messages
+                WHERE telegram_id = $1 AND role = $2
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, telegram_id, role)
+            return row["content"] if row else None
+    except Exception as e:
+        print(f"Error retrieving last {role} message: {e}")
+        return None
+
+
 async def ensure_user_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handler that ensures user exists in database (runs on all messages, non-blocking)"""
     # Run database operation asynchronously without blocking the response
@@ -293,7 +330,8 @@ async def stream_ai_response(messages: list, bot, chat_id: int, message_id: int,
                         await bot.edit_message_text(
                             chat_id=chat_id,
                             message_id=message_id,
-                            text=final_text
+                            text=final_text,
+                            reply_markup=build_language_keyboard(message_id)
                         )
                         last_sent_text = final_text
                     except TelegramError as e:
@@ -374,7 +412,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not history:
         messages.append({
             "role": "system",
-            "content": "You are a helpful assistant. Pay attention to the conversation history and respond appropriately to follow-up questions and confirmations."
+            "content": BASE_SYSTEM_PROMPT
         })
     
     # Add conversation history
@@ -389,8 +427,79 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     
     # Send initial "thinking" message
     sent_message = await update.message.reply_text("Thinking...")
+    _message_prompt_map[(sent_message.chat_id, sent_message.message_id)] = message_text
     
     # Stream AI response and edit the message as chunks arrive
+    await stream_ai_response(
+        messages,
+        context.bot,
+        sent_message.chat_id,
+        sent_message.message_id,
+        telegram_id
+    )
+
+
+async def handle_language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Regenerate response in selected language using original prompt when available."""
+    query = update.callback_query
+    if not query or not query.data:
+        return
+
+    parts = query.data.split(":", 2)
+    if len(parts) != 3 or parts[0] != "lang":
+        return
+
+    lang = parts[1].lower()
+    if lang not in LANGUAGE_SYSTEM_HINT:
+        await query.answer("Unsupported language", show_alert=False)
+        return
+
+    try:
+        target_message_id = int(parts[2])
+    except ValueError:
+        await query.answer("Invalid request", show_alert=False)
+        return
+
+    await query.answer("Generating...")
+
+    if not query.message or not update.effective_user:
+        return
+
+    telegram_id = update.effective_user.id
+    chat_id = query.message.chat_id
+    language_hint = LANGUAGE_SYSTEM_HINT[lang]
+
+    source_text = _message_prompt_map.get((chat_id, target_message_id))
+    source_role = "user"
+
+    if not source_text:
+        source_text = await get_last_message_by_role(telegram_id, "user")
+        source_role = "user"
+
+    if not source_text:
+        source_text = await get_last_message_by_role(telegram_id, "assistant")
+        source_role = "assistant"
+
+    if not source_text:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="Sorry, I couldn't find text to regenerate."
+        )
+        return
+
+    if source_role == "assistant":
+        user_content = f"Rewrite the following text in the target language:\n\n{source_text}"
+    else:
+        user_content = source_text
+
+    messages = [
+        {"role": "system", "content": f"{BASE_SYSTEM_PROMPT} {language_hint}"},
+        {"role": "user", "content": user_content}
+    ]
+
+    sent_message = await context.bot.send_message(chat_id=chat_id, text="Thinking...")
+    _message_prompt_map[(sent_message.chat_id, sent_message.message_id)] = source_text
+
     await stream_ai_response(
         messages,
         context.bot,
@@ -441,6 +550,7 @@ def main():
     
     # Add command handlers
     app.add_handler(CommandHandler("start", hello))
+    app.add_handler(CallbackQueryHandler(handle_language_callback, pattern=r"^lang:(en|ru):\d+$"))
     
     # Add handler for arbitrary text messages (AI responses)
     # This should run after command handlers, so commands are processed first
