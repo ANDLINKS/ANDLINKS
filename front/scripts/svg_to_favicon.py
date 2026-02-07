@@ -66,7 +66,7 @@ def create_ico(png_bytes_list: list[bytes], sizes: list[int], output_path: Path)
 
 def main() -> None:
     repo_root = Path(__file__).resolve().parent.parent
-    svg_path = repo_root / "assets" / "images" / "loga.svg"
+    svg_path = repo_root / "assets" / "images" / "logo.svg"
     ico_path = repo_root / "assets" / "favicon.ico"
 
     if len(sys.argv) >= 2:
