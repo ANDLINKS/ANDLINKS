@@ -7,6 +7,7 @@ import 'swap_page.dart';
 import 'trade_page.dart';
 import 'wallets_page.dart';
 import 'send_page.dart';
+import 'apps_page.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -408,39 +409,54 @@ class _MainPageState extends State<MainPage> {
                                 ),
                               ),
                               Expanded(
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    SvgPicture.asset(
-                                      AppTheme.isLightTheme
-                                          ? 'assets/icons/menudva/earn_light.svg'
-                                          : 'assets/icons/menudva/earn_dark.svg',
-                                      width: 30,
-                                      height: 30,
-                                    ),
-                                    const SizedBox(height: 5),
-                                    SizedBox(
-                                      height: 15,
-                                      child: Center(
-                                        child: Text(
-                                          'Apps',
-                                          style: TextStyle(
-                                            fontFamily: 'Aeroport',
-                                            fontSize: 15,
-                                            fontWeight: FontWeight.w500,
-                                            color: AppTheme.textColor,
-                                            height: 1.0,
-                                          ),
-                                          textHeightBehavior:
-                                              const TextHeightBehavior(
-                                            applyHeightToFirstAscent: false,
-                                            applyHeightToLastDescent: false,
+                                child: GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      PageRouteBuilder(
+                                        pageBuilder: (context, animation,
+                                                secondaryAnimation) =>
+                                            const AppsPage(),
+                                        transitionDuration: Duration.zero,
+                                        reverseTransitionDuration:
+                                            Duration.zero,
+                                      ),
+                                    );
+                                  },
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment: CrossAxisAlignment.center,
+                                    children: [
+                                      SvgPicture.asset(
+                                        AppTheme.isLightTheme
+                                            ? 'assets/icons/menudva/earn_light.svg'
+                                            : 'assets/icons/menudva/earn_dark.svg',
+                                        width: 30,
+                                        height: 30,
+                                      ),
+                                      const SizedBox(height: 5),
+                                      SizedBox(
+                                        height: 15,
+                                        child: Center(
+                                          child: Text(
+                                            'Apps',
+                                            style: TextStyle(
+                                              fontFamily: 'Aeroport',
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w500,
+                                              color: AppTheme.textColor,
+                                              height: 1.0,
+                                            ),
+                                            textHeightBehavior:
+                                                const TextHeightBehavior(
+                                              applyHeightToFirstAscent: false,
+                                              applyHeightToLastDescent: false,
+                                            ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                               Expanded(

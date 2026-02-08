@@ -33,6 +33,7 @@ flutter:
     - assets/sample/
     - assets/sample/mak/
     - assets/sample/items/
+    - assets/Apps/
   
   # Fonts configuration
   fonts:
