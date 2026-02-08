@@ -31,7 +31,7 @@ class _AppsPageState extends State<AppsPage> {
   double _getAdaptiveBottomPadding() {
     final service = TelegramSafeAreaService();
     final safeAreaInset = service.getSafeAreaInset();
-    return safeAreaInset.bottom + 30;
+    return safeAreaInset.bottom + 59;
   }
 
   void _updateScrollIndicator() {
@@ -127,8 +127,6 @@ class _AppsPageState extends State<AppsPage> {
                             ),
                           ),
                         ],
-                        // Extra scroll space so the last image can be scrolled above the bottom bar (not overlayed)
-                        SizedBox(height: 25),
                       ],
                     ),
                   ),
