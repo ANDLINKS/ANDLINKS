@@ -40,17 +40,18 @@ if [ "$OLLAMA_READY" = false ]; then
     cat /tmp/ollama.log || true
 fi
 
-# Check if model exists, if not pull it in background (don't block startup)
+# Ensure model exists before API starts (prevents runtime "model not found" failures).
 # Model can be set via OLLAMA_MODEL env var, defaults to llama3.2:3b
 MODEL=${OLLAMA_MODEL:-llama3.2:3b}
 echo "Checking for model: $MODEL"
 if [ -n "$OLLAMA_BIN" ] && [ -f "$OLLAMA_BIN" ]; then
-    if ! $OLLAMA_BIN list 2>/dev/null | grep -q "$MODEL"; then
-        echo "Model $MODEL not found. Will pull in background (this may take a while, ~2GB download)..."
-        # Pull model in background so it doesn't block FastAPI startup
-        ($OLLAMA_BIN pull $MODEL && echo "Model $MODEL pulled successfully!") || {
-            echo "Warning: Failed to pull model. Chat requests will fail until model is available."
-        } &
+    if ! $OLLAMA_BIN list 2>/dev/null | awk 'NR>1 {print $1}' | grep -Fxq "$MODEL"; then
+        echo "Model $MODEL not found. Pulling before startup (first boot may take several minutes)..."
+        if ! $OLLAMA_BIN pull "$MODEL"; then
+            echo "ERROR: Failed to pull model $MODEL. Aborting startup."
+            exit 1
+        fi
+        echo "Model $MODEL pulled successfully."
     else
         echo "Model $MODEL already exists"
     fi
