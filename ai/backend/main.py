@@ -757,7 +757,6 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
             "type": ticker_data.get("type") or "Unknown",
             "total_supply": ticker_data.get("total_supply"),
             "total_supply_formatted": _format_int_with_commas(total_supply_raw),
-            "total_supply_compact": _format_compact_number(total_supply_raw),
             "holders": ticker_data.get("holders"),
             "holders_formatted": _format_int_with_commas(holders_raw),
             "tx_24h": ticker_data.get("tx_24h"),
@@ -777,13 +776,38 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
             facts.pop("tx_24h", None)
             facts.pop("tx_24h_formatted", None)
 
+        def _display_value(raw_value, formatted_value):
+            if formatted_value is not None:
+                return str(formatted_value)
+            if raw_value is None:
+                return None
+            return str(raw_value)
+
+        supply_value = _display_value(facts.get("total_supply"), facts.get("total_supply_formatted"))
+        holders_value = _display_value(facts.get("holders"), facts.get("holders_formatted"))
+        tx_24h_value = _display_value(facts.get("tx_24h"), facts.get("tx_24h_formatted"))
+
+        anchor_lines = [
+            f"Symbol: {facts.get('symbol', 'Unknown')}",
+            f"Name: {facts.get('name', 'Unknown')}",
+            f"Type: {facts.get('type', 'Unknown')}",
+            f"Total supply: {supply_value if supply_value is not None else 'not available'}",
+            f"Holders: {holders_value if holders_value is not None else 'not available'}",
+        ]
+        if tx_24h_value is not None:
+            anchor_lines.append(f"24h transactions: {tx_24h_value}")
+
         lang_lock = "Russian" if user_lang == "ru" else "English"
 
         # Strict instruction prompt
         ticker_prompt = (
             f"Reply ONLY in {lang_lock}.\n"
             "Reply in the same language as the user's latest message (detect RU/EN from that message).\n"
-            "Use ONLY the facts provided in <REFERENCE_FACTS> below.\n"
+            "Use ONLY the facts provided in <REFERENCE_FACTS> and <FACT_ANCHORS> below.\n"
+            "Use <FACT_ANCHORS> as the canonical numeric source.\n"
+            "Copy anchor numeric values exactly and do not alter digits/punctuation.\n"
+            "Do not swap values between labels (e.g., never attach 'holders' to total supply).\n"
+            "Treat each anchor line as fixed label:value data.\n"
             "Use a detailed style in 3-5 natural sentences.\n"
             "Include total supply and holders count when available.\n"
             "If one of those fields is missing, say that specific metric is not available.\n"
@@ -796,11 +820,13 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
             "Do not invent, guess, translate, or normalize token unit names.\n"
             "Do not add any unit name for supply unless that exact unit is present in <REFERENCE_FACTS>.\n"
             "For total supply, output only the numeric value unless an explicit unit is provided.\n"
+            "Do not add magnitude explanations like million/billion/trillion/quadrillion.\n"
+            "Do not add parenthetical conversions or approximations for numeric values.\n"
+            "For each metric, provide exactly one numeric representation (no duplicates in multiple formats).\n"
             "Never create words that are not in standard language usage.\n"
             "In English, prefer 'currently has X holders' (not 'holds X holders').\n"
             "In Russian, use neutral financial phrasing and avoid decorative/speculative wording.\n"
             "For numeric values, prefer human-friendly formatting (e.g., commas: 545,217,356,060,904,508,815).\n"
-            "If both raw and formatted values exist, prefer the formatted values in your answer.\n"
             "If type is 'jetton', call it a 'jetton' (or in Russian: 'джеттон'), not a generic token.\n"
             "DO NOT output <REFERENCE_FACTS> tags, JSON structure, field names, or labels.\n"
             "DO NOT quote or copy the XML/JSON structure.\n"
@@ -817,9 +843,11 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
             + json.dumps(facts, ensure_ascii=False, indent=2)
             + "\n</REFERENCE_FACTS>"
         )
+        fact_anchors = "<FACT_ANCHORS>\n" + "\n".join(anchor_lines) + "\n</FACT_ANCHORS>"
         
         messages_dict.append({"role": "system", "content": ticker_prompt})
         messages_dict.append({"role": "system", "content": reference_facts})
+        messages_dict.append({"role": "system", "content": fact_anchors})
     
     elif rag_context:
         # General RAG mode: inject context for broader queries
