@@ -56,9 +56,40 @@ run_prompt() {
   echo
 }
 
+assert_no_tx_words_when_tx24h_null() {
+  local symbol="$1"
+  local prompt="$2"
+  local rag_json="/tmp/rag_${symbol}_assert.json"
+
+  curl -fsS "$RAG_URL/tokens/$symbol" > "$rag_json"
+  local tx24h
+  tx24h=$(jq -r '.tx_24h' "$rag_json")
+  if [[ "$tx24h" != "null" ]]; then
+    echo "SKIP: $symbol has tx_24h=$tx24h (assert expects null)"
+    return 0
+  fi
+
+  local chat_line chat_text
+  chat_line=$(
+    curl -fsS -N -X POST "$AI_BACKEND_URL/api/chat" \
+      -H "Content-Type: application/json" \
+      -H "X-API-Key: $API_KEY" \
+      -d "$(jq -cn --arg p "$prompt" '{messages:[{role:"user",content:$p}],stream:false}')"
+  )
+  chat_text=$(printf "%s\n" "$chat_line" | tail -n 1 | jq -r '.response // ""')
+
+  if printf "%s\n" "$chat_text" | grep -Eiq '\btx\b|transactions|транзакц'; then
+    echo "FAIL: response mentions transactions even though tx_24h is null for $symbol"
+    echo "Response: $chat_text"
+    exit 1
+  fi
+  echo "OK: no transaction wording when tx_24h is null for $symbol"
+}
+
 run_prompt '$DOGS'
 run_prompt 'что такое DOGS?'
 run_prompt '$TON'
+assert_no_tx_words_when_tx24h_null "TON" '$TON'
 
 echo "== Optional log checks =="
 if [[ -n "$AI_LOG_FILE" && -f "$AI_LOG_FILE" ]]; then

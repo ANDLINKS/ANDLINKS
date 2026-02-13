@@ -20,6 +20,13 @@ TOKENS_API_URL = os.getenv("TOKENS_API_URL", "https://tokens.swap.coffee")
 TOKENS_API_KEY = os.getenv("TOKENS_API_KEY")
 TOKENS_VERIFICATION = os.getenv("TOKENS_VERIFICATION", "WHITELISTED,COMMUNITY,UNKNOWN")
 
+
+def _first_non_none(*values):
+    for v in values:
+        if v is not None:
+            return v
+    return None
+
 def load_store() -> List[Dict[str, Any]]:
     if not os.path.exists(STORE_PATH):
         return []
@@ -422,10 +429,19 @@ async def get_token(symbol: str):
         "symbol": data.get("symbol") or normalized,
         "name": data.get("name"),
         "decimals": None,
-        "total_supply": data.get("total_supply") or data.get("supply") or data.get("totalSupply"),
-        "holders": stats.get("holders_count") or data.get("holders") or data.get("holders_count"),
-        "tx_24h": data.get("tx_24h") or data.get("tx24h") or data.get("transactions_24h"),
-        "last_activity": data.get("last_activity") or data.get("last_trade_at") or data.get("created_at"),
+        # Keep source values as-is; do not fabricate fallback numbers.
+        "total_supply": _first_non_none(
+            data.get("total_supply"), data.get("supply"), data.get("totalSupply")
+        ),
+        "holders": _first_non_none(
+            stats.get("holders_count"), data.get("holders"), data.get("holders_count")
+        ),
+        "tx_24h": _first_non_none(
+            data.get("tx_24h"), data.get("tx24h"), data.get("transactions_24h")
+        ),
+        "last_activity": _first_non_none(
+            data.get("last_activity"), data.get("last_trade_at"), data.get("created_at")
+        ),
         "sources": [
             {
                 "source_name": "tokens.swap.coffee",

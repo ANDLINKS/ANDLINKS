@@ -25,6 +25,9 @@ _message_prompt_map = {}
 _stream_cancel_events: dict[tuple[int, int], asyncio.Event] = {}
 _active_bot_msg_by_chat: dict[int, int] = {}
 _active_stream_tasks: dict[tuple[int, int], asyncio.Task] = {}
+_lang_switch_locks: dict[tuple[int, int], asyncio.Lock] = {}
+_lang_switch_last_tap: dict[tuple[int, int], float] = {}
+LANG_SWITCH_DEBOUNCE_SECONDS = 0.5
 
 BASE_SYSTEM_PROMPT = (
     "You are a helpful assistant. Pay attention to the conversation history and respond "
@@ -626,6 +629,11 @@ async def handle_language_callback(update: Update, context: ContextTypes.DEFAULT
     query = update.callback_query
     if not query or not query.data:
         return
+    # Always ack callback immediately to prevent Telegram retry/spinner loops.
+    try:
+        await query.answer()
+    except TelegramError:
+        pass
 
     parts = query.data.split(":", 2)
     if len(parts) != 3 or parts[0] != "lang":
@@ -633,90 +641,117 @@ async def handle_language_callback(update: Update, context: ContextTypes.DEFAULT
 
     lang = parts[1].lower()
     if lang not in LANGUAGE_SYSTEM_HINT:
-        await query.answer("Unsupported language", show_alert=False)
+        try:
+            await query.answer("Unsupported language", show_alert=False)
+        except TelegramError:
+            pass
         return
 
     try:
         target_message_id = int(parts[2])
     except ValueError:
-        await query.answer("Invalid request", show_alert=False)
+        try:
+            await query.answer("Invalid request", show_alert=False)
+        except TelegramError:
+            pass
         return
-
-    await query.answer("Generating...")
 
     if not query.message or not update.effective_user:
         return
 
     telegram_id = update.effective_user.id
     chat_id = query.message.chat_id
-    await cancel_stream(chat_id, target_message_id)
+    key = (chat_id, target_message_id)
 
-    thinking_text = THINKING_TEXT.get(lang, THINKING_TEXT["en"])
-    active_message_id = target_message_id
-    try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=target_message_id,
-            text=thinking_text,
-            reply_markup=build_language_keyboard(target_message_id)
-        )
-    except TelegramError as e:
-        print(f"Warning: Could not edit callback target message {target_message_id}: {e}. Falling back to new message.")
-        sent_message = await context.bot.send_message(chat_id=chat_id, text=thinking_text)
-        active_message_id = sent_message.message_id
-        try:
-            await context.bot.edit_message_reply_markup(
-                chat_id=chat_id,
-                message_id=active_message_id,
-                reply_markup=build_language_keyboard(active_message_id)
-            )
-        except TelegramError as e2:
-            print(f"Warning: Could not attach keyboard to fallback message: {e2}")
-
-    source_text = _message_prompt_map.get((chat_id, target_message_id))
-    if not source_text:
-        source_text = await get_last_message_by_role(telegram_id, "user")
-
-    if not source_text:
-        missing_text = "Sorry, I couldn't find text to regenerate."
-        try:
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=active_message_id,
-                text=missing_text,
-                reply_markup=build_language_keyboard(active_message_id)
-            )
-        except TelegramError as e:
-            print(f"Warning: Could not edit missing-source text: {e}. Sending fallback message.")
-            missing_msg = await context.bot.send_message(chat_id=chat_id, text=missing_text)
-            try:
-                await context.bot.edit_message_reply_markup(
-                    chat_id=chat_id,
-                    message_id=missing_msg.message_id,
-                    reply_markup=build_language_keyboard(missing_msg.message_id)
-                )
-            except TelegramError as e2:
-                print(f"Warning: Could not attach keyboard to missing-source message: {e2}")
+    # Ignore rapid duplicate taps on the same message.
+    now = time.monotonic()
+    last_tap = _lang_switch_last_tap.get(key, 0.0)
+    if now - last_tap < LANG_SWITCH_DEBOUNCE_SECONDS:
         return
+    _lang_switch_last_tap[key] = now
+    # Prune stale debounce entries to avoid unbounded map growth.
+    prune_before = now - 60
+    for stale_key, ts in list(_lang_switch_last_tap.items()):
+        if ts < prune_before:
+            _lang_switch_last_tap.pop(stale_key, None)
 
-    user_content = source_text
+    lock = _lang_switch_locks.setdefault(key, asyncio.Lock())
 
-    messages = [
-        {"role": "system", "content": build_regen_system_prompt(lang)},
-        {"role": "user", "content": user_content}
-    ]
+    try:
+        async with lock:
+            await cancel_stream(chat_id, target_message_id)
 
-    _message_prompt_map[(chat_id, active_message_id)] = source_text
-    _active_bot_msg_by_chat[chat_id] = active_message_id
+            thinking_text = THINKING_TEXT.get(lang, THINKING_TEXT["en"])
+            active_message_id = target_message_id
+            try:
+                await context.bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=target_message_id,
+                    text=thinking_text,
+                    reply_markup=build_language_keyboard(target_message_id)
+                )
+            except TelegramError as e:
+                if "not modified" in str(e).lower():
+                    pass
+                else:
+                    print(f"Warning: Could not edit callback target message {target_message_id}: {e}. Falling back to new message.")
+                    sent_message = await context.bot.send_message(chat_id=chat_id, text=thinking_text)
+                    active_message_id = sent_message.message_id
+                    try:
+                        await context.bot.edit_message_reply_markup(
+                            chat_id=chat_id,
+                            message_id=active_message_id,
+                            reply_markup=build_language_keyboard(active_message_id)
+                        )
+                    except TelegramError as e2:
+                        print(f"Warning: Could not attach keyboard to fallback message: {e2}")
 
-    stream_task = asyncio.create_task(stream_ai_response(
-        messages,
-        context.bot,
-        chat_id,
-        active_message_id,
-        telegram_id
-    ))
-    _active_stream_tasks[(chat_id, active_message_id)] = stream_task
+            source_text = _message_prompt_map.get((chat_id, target_message_id))
+            if not source_text:
+                source_text = await get_last_message_by_role(telegram_id, "user")
+
+            if not source_text:
+                missing_text = "Sorry, I couldn't find text to regenerate."
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=active_message_id,
+                        text=missing_text,
+                        reply_markup=build_language_keyboard(active_message_id)
+                    )
+                except TelegramError as e:
+                    print(f"Warning: Could not edit missing-source text: {e}. Sending fallback message.")
+                    missing_msg = await context.bot.send_message(chat_id=chat_id, text=missing_text)
+                    try:
+                        await context.bot.edit_message_reply_markup(
+                            chat_id=chat_id,
+                            message_id=missing_msg.message_id,
+                            reply_markup=build_language_keyboard(missing_msg.message_id)
+                        )
+                    except TelegramError as e2:
+                        print(f"Warning: Could not attach keyboard to missing-source message: {e2}")
+                return
+
+            user_content = source_text
+
+            messages = [
+                {"role": "system", "content": build_regen_system_prompt(lang)},
+                {"role": "user", "content": user_content}
+            ]
+
+            _message_prompt_map[(chat_id, active_message_id)] = source_text
+            _active_bot_msg_by_chat[chat_id] = active_message_id
+
+            stream_task = asyncio.create_task(stream_ai_response(
+                messages,
+                context.bot,
+                chat_id,
+                active_message_id,
+                telegram_id
+            ))
+            _active_stream_tasks[(chat_id, active_message_id)] = stream_task
+    finally:
+        _lang_switch_locks.pop(key, None)
 
 
 async def post_init(app):

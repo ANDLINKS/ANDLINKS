@@ -771,6 +771,12 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
         # Remove None values
         facts = {k: v for k, v in facts.items() if v is not None}
 
+        # Deterministic policy (Option A):
+        # If tx_24h is missing, remove all transaction fields so the model does not mention them.
+        if tx_24h_raw is None:
+            facts.pop("tx_24h", None)
+            facts.pop("tx_24h_formatted", None)
+
         lang_lock = "Russian" if user_lang == "ru" else "English"
 
         # Strict instruction prompt
@@ -779,17 +785,30 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
             "Reply in the same language as the user's latest message (detect RU/EN from that message).\n"
             "Use ONLY the facts provided in <REFERENCE_FACTS> below.\n"
             "Use a detailed style in 3-5 natural sentences.\n"
-            "When available, include: total supply, holders count, and 24h transactions.\n"
+            "Include total supply and holders count when available.\n"
             "If one of those fields is missing, say that specific metric is not available.\n"
+            "Mention 24h transactions only when tx_24h exists in <REFERENCE_FACTS>.\n"
+            "If tx_24h is absent/null, do not mention transactions at all.\n"
+            "If tx_24h is absent/null, do not imply zero activity and do not reference missing transaction data.\n"
+            "Never mention any time period other than 24h for tx_24h.\n"
+            "Never use wording like 'past hour', 'last hour', or '1h' for tx_24h.\n"
+            "Never infer or fabricate tx_24h (or any metric) from examples, priors, or similar tokens.\n"
+            "Do not invent, guess, translate, or normalize token unit names.\n"
+            "Do not add any unit name for supply unless that exact unit is present in <REFERENCE_FACTS>.\n"
+            "For total supply, output only the numeric value unless an explicit unit is provided.\n"
+            "Never create words that are not in standard language usage.\n"
+            "In English, prefer 'currently has X holders' (not 'holds X holders').\n"
+            "In Russian, use neutral financial phrasing and avoid decorative/speculative wording.\n"
             "For numeric values, prefer human-friendly formatting (e.g., commas: 545,217,356,060,904,508,815).\n"
             "If both raw and formatted values exist, prefer the formatted values in your answer.\n"
+            "If type is 'jetton', call it a 'jetton' (or in Russian: 'джеттон'), not a generic token.\n"
             "DO NOT output <REFERENCE_FACTS> tags, JSON structure, field names, or labels.\n"
             "DO NOT quote or copy the XML/JSON structure.\n"
             "If you are about to output '<REFERENCE_FACTS>' or any tag, STOP and rewrite in plain language.\n"
             "Do not mention the data source unless the user explicitly asked for it.\n"
             "In Russian, avoid awkward declensions after huge numbers; use neutral phrasing like 'Общий выпуск: ...'.\n"
             "If a fact is missing or null, say it's 'unknown' or 'not available' — do not invent data.\n"
-            "Example good answer: 'DOGS is a token on TON with 100M supply and 50K holders. It has been active with 1,200 transactions today.'\n"
+            "Example good answer: 'DOGS is a jetton on TON with total supply 550,217,356,060,904,508,815 and currently has 4,900,876 holders.'\n"
             "Example bad answer: 'TICKER_FACTS\\nType: Token\\nSupply: 100M'"
         )
         
