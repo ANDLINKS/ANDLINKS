@@ -716,6 +716,60 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
         # fall through to normal LLM answer (user might be asking about something else)
     
     # STEP 2: Try general RAG query if not in ticker mode
+    if ticker_mode and ticker_data:
+        include_source = _user_asked_for_source(user_last)
+
+        def _metric_display(value):
+            parsed = _to_int(value)
+            if parsed is not None:
+                return _format_int_with_commas(parsed)
+            if value is None:
+                return None
+            return str(value).strip() or None
+
+        symbol = str(ticker_data.get("symbol") or ticker_symbol or "Unknown")
+        name = str(ticker_data.get("name") or symbol)
+        token_type = str(ticker_data.get("type") or "token").lower()
+        is_jetton = token_type == "jetton"
+
+        supply_value = _metric_display(ticker_data.get("total_supply"))
+        holders_value = _metric_display(ticker_data.get("holders"))
+        tx_24h_value = _metric_display(ticker_data.get("tx_24h"))
+
+        if user_lang == "ru":
+            intro = (
+                f"{name} — джеттон в сети TON."
+                if is_jetton
+                else f"{name} — токен в сети TON."
+            )
+            lines = [
+                intro,
+                f"Общий выпуск: {supply_value if supply_value is not None else 'неизвестно'}.",
+                f"Держатели: {holders_value if holders_value is not None else 'неизвестно'}.",
+            ]
+            if tx_24h_value is not None:
+                lines.append(f"Транзакции за 24ч: {tx_24h_value}.")
+            if include_source:
+                lines.append(f"Источник: {ticker_data.get('source', 'tokens.swap.coffee')}.")
+        else:
+            intro = (
+                f"{name} is a jetton on TON."
+                if is_jetton
+                else f"{name} is a token on TON."
+            )
+            lines = [
+                intro,
+                f"Total supply: {supply_value if supply_value is not None else 'not available'}.",
+                f"It currently has {holders_value} holders." if holders_value is not None else "Holders count: not available.",
+            ]
+            if tx_24h_value is not None:
+                lines.append(f"24h transactions: {tx_24h_value}.")
+            if include_source:
+                lines.append(f"Source: {ticker_data.get('source', 'tokens.swap.coffee')}.")
+
+        return stream_text_response(" ".join(lines))
+
+    # STEP 2: Try general RAG query if not in ticker mode
     if RAG_URL and not ticker_mode and user_last:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
