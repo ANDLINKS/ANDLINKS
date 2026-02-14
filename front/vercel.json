@@ -2,12 +2,19 @@
   "functions": {
     "api/config.js": {
       "maxDuration": 10
+    },
+    "api/ai.js": {
+      "maxDuration": 60
     }
   },
   "rewrites": [
     {
       "source": "/api/config",
       "destination": "/api/config.js"
+    },
+    {
+      "source": "/api/ai",
+      "destination": "/api/ai.js"
     },
     {
       "source": "/(.*)",

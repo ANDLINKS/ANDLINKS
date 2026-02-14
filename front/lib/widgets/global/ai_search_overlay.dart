@@ -41,19 +41,21 @@ class _AiSearchOverlayState extends State<AiSearchOverlay> {
 
   void _onFocusChanged() {
     final newFocusState = GlobalBottomBar.focusNotifier.value;
-    
+
     // Only react to actual changes - prevent unnecessary rebuilds
     if (newFocusState == _isFocused) return;
-    
+
     // Update state immediately - don't delay with post-frame callback
     // Delaying causes flash because overlay appears, then state updates later
     setState(() {
       _isFocused = newFocusState;
     });
-    
+
     if (_isFocused) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && GlobalBottomBar.focusNotifier.value && !_backButtonSetup) {
+        if (mounted &&
+            GlobalBottomBar.focusNotifier.value &&
+            !_backButtonSetup) {
           _setupBackButton();
         }
       });
@@ -61,21 +63,23 @@ class _AiSearchOverlayState extends State<AiSearchOverlay> {
       _teardownBackButton();
     }
   }
-  
+
   void _setupBackButton() {
     if (_backButtonSetup) return; // Prevent multiple setups
-    
+
     final telegramWebApp = TelegramWebApp();
     if (telegramWebApp.isActuallyInTelegram) {
       // Create callback to unfocus input when back button is clicked
       _backButtonCallback = () {
         GlobalBottomBar.unfocusInput();
       };
-      
+
       // Show back button and handle clicks
       // Use postFrameCallback to ensure this happens after the current frame
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && GlobalBottomBar.focusNotifier.value && !_backButtonSetup) {
+        if (mounted &&
+            GlobalBottomBar.focusNotifier.value &&
+            !_backButtonSetup) {
           try {
             TelegramBackButton.show();
             TelegramBackButton.onClick(_backButtonCallback!);
@@ -91,7 +95,7 @@ class _AiSearchOverlayState extends State<AiSearchOverlay> {
 
   void _teardownBackButton() {
     if (!_backButtonSetup) return; // Nothing to teardown
-    
+
     final telegramWebApp = TelegramWebApp();
     if (telegramWebApp.isActuallyInTelegram && _backButtonCallback != null) {
       try {
@@ -132,12 +136,13 @@ class _AiSearchOverlayState extends State<AiSearchOverlay> {
   Widget build(BuildContext context) {
     // Use both MediaQuery and KeyboardHeightService - overlay rebuilds when either changes
     final mediaQueryKeyboard = MediaQuery.of(context).viewInsets.bottom;
+    final shouldHideOverlay = !_isFocused || GlobalBottomBar.isAiPageOpen;
 
     // Overlay is visible only when focused
     return Offstage(
-      offstage: !_isFocused,
+      offstage: shouldHideOverlay,
       child: IgnorePointer(
-        ignoring: !_isFocused,
+        ignoring: shouldHideOverlay,
         child: EdgeSwipeBack(
           onBack: _onOverlayTap,
           child: GestureDetector(
@@ -147,60 +152,62 @@ class _AiSearchOverlayState extends State<AiSearchOverlay> {
               color: AppTheme.backgroundColor,
               child: SizedBox.expand(
                 child: ValueListenableBuilder<double>(
-                valueListenable: KeyboardHeightService().heightNotifier,
-                builder: (context, serviceKeyboard, _) {
-                  final keyboardBottom =
-                      math.max(mediaQueryKeyboard, serviceKeyboard);
-                  return Padding(
-                    padding: EdgeInsets.only(bottom: keyboardBottom),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      mainAxisSize: MainAxisSize.max,
-                      children: [
-                        const Spacer(flex: 1),
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 600),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 15),
-                            child: GestureDetector(
-                              onTap: () {},
-                              behavior: HitTestBehavior.opaque,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.center,
-                                children: [
-                                  ..._premadeOptions.map((option) => Padding(
-                                        padding: const EdgeInsets.only(bottom: 20),
-                                        child: GestureDetector(
-                                          onTap: () => _onOptionTap(option),
-                                          behavior: HitTestBehavior.opaque,
-                                          child: Text(
-                                            option,
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              fontFamily: 'Aeroport',
-                                              fontSize: 15,
-                                              fontWeight: FontWeight.w500,
-                                              color: AppTheme.textColor,
+                  valueListenable: KeyboardHeightService().heightNotifier,
+                  builder: (context, serviceKeyboard, _) {
+                    final keyboardBottom =
+                        math.max(mediaQueryKeyboard, serviceKeyboard);
+                    return Padding(
+                      padding: EdgeInsets.only(bottom: keyboardBottom),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.max,
+                        children: [
+                          const Spacer(flex: 1),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 600),
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 15),
+                              child: GestureDetector(
+                                onTap: () {},
+                                behavior: HitTestBehavior.opaque,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    ..._premadeOptions.map((option) => Padding(
+                                          padding:
+                                              const EdgeInsets.only(bottom: 20),
+                                          child: GestureDetector(
+                                            onTap: () => _onOptionTap(option),
+                                            behavior: HitTestBehavior.opaque,
+                                            child: Text(
+                                              option,
+                                              textAlign: TextAlign.center,
+                                              style: TextStyle(
+                                                fontFamily: 'Aeroport',
+                                                fontSize: 15,
+                                                fontWeight: FontWeight.w500,
+                                                color: AppTheme.textColor,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                      )),
-                                ],
+                                        )),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                        const Spacer(flex: 1),
-                      ],
-                    ),
-                  );
-                },
+                          const Spacer(flex: 1),
+                        ],
+                      ),
+                    );
+                  },
+                ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }
