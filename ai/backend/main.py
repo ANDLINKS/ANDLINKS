@@ -36,6 +36,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:1.5b")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 RAG_URL = os.getenv("RAG_URL", "http://127.0.0.1:8001")
+RESPONSE_FORMAT_VERSION = "facts_analysis_v2"
 
 # ============================================================================
 # TICKER DETECTION - PRODUCTION GRADE
@@ -327,15 +328,17 @@ def _format_int_with_commas(value: Optional[int]) -> Optional[str]:
 
 
 def _format_compact_number(value: Optional[int]) -> Optional[str]:
-    """Compact formatter like 545.2T for very large values."""
+    """Compact formatter like 545.2Q for very large values."""
     if value is None:
         return None
+    
     scales = [
-        (10**15, "Q"),
-        (10**12, "T"),
-        (10**9, "B"),
-        (10**6, "M"),
-        (10**3, "K"),
+        (10**18, "Qi"),  # Quintillion (10^18)
+        (10**15, "Q"),   # Quadrillion (10^15)
+        (10**12, "T"),   # Trillion
+        (10**9, "B"),    # Billion
+        (10**6, "M"),    # Million
+        (10**3, "K"),    # Thousand
     ]
     for threshold, suffix in scales:
         if value >= threshold:
@@ -343,15 +346,114 @@ def _format_compact_number(value: Optional[int]) -> Optional[str]:
     return str(value)
 
 
-def _user_asked_for_source(text: str) -> bool:
+def _metric_display(value: Any) -> Optional[str]:
+    parsed = _to_int(value)
+    if parsed is not None:
+        return _format_int_with_commas(parsed)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _format_activity_date(value: Any) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
     if not text:
-        return False
-    text_lower = text.lower()
-    source_words = {
-        "source", "data source", "where from", "reference",
-        "источник", "откуда данные", "откуда инфа", "ссылка",
-    }
-    return any(word in text_lower for word in source_words)
+        return None
+    if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+        return text[:10]
+    return text
+
+
+def _resolve_token_source(ticker_data: Dict[str, Any]) -> str:
+    source = ticker_data.get("source")
+    if source:
+        return str(source)
+    sources = ticker_data.get("sources")
+    if isinstance(sources, list):
+        for item in sources:
+            if isinstance(item, dict) and item.get("source_name"):
+                return str(item["source_name"])
+    return "tokens.swap.coffee"
+
+
+def _build_ticker_facts_block(ticker_data: Dict[str, Any], ticker_symbol: Optional[str], user_lang: str) -> str:
+    symbol = str(ticker_data.get("symbol") or ticker_symbol or "Unknown")
+    name = str(ticker_data.get("name") or symbol)
+    token_type = str(ticker_data.get("type") or "token").lower()
+    is_jetton = token_type == "jetton"
+
+    # RAW VALUES - exactly as fetched
+    supply_raw = ticker_data.get("total_supply")
+    holders_raw = ticker_data.get("holders")
+    
+    # Format raw integers with commas for readability (but keep them accurate)
+    supply_display = _metric_display(supply_raw) if supply_raw is not None else None
+    holders_display = _metric_display(holders_raw) if holders_raw is not None else None
+    
+    last_activity_value = _format_activity_date(ticker_data.get("last_activity"))
+    source_value = _resolve_token_source(ticker_data)
+
+    if user_lang == "ru":
+        type_text = "джеттон" if is_jetton else "токен"
+        
+        lines = [
+            f"🪙 {name}",
+            "",
+            f"{type_text.capitalize()} в сети TON",
+            f"Выпуск: {supply_display if supply_display else 'неизвестно'}",
+            f"Держатели: {holders_display if holders_display else 'неизвестно'}",
+            f"Последняя активность: {last_activity_value if last_activity_value else 'неизвестно'}",
+            "",
+            f"ℹ️ Источник: {source_value}"
+        ]
+        
+    else:
+        type_text = "jetton" if is_jetton else "token"
+        
+        lines = [
+            f"🪙 {name}",
+            "",
+            f"{type_text.capitalize()} on TON",
+            f"Supply: {supply_display if supply_display else 'not available'}",
+            f"Holders: {holders_display if holders_display else 'not available'}",
+            f"Last activity: {last_activity_value if last_activity_value else 'not available'}",
+            "",
+            f"ℹ️ Source: {source_value}"
+        ]
+    
+    return "\n".join(lines)
+
+
+_CJK_RE = re.compile(r"[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]")
+
+
+def _narrative_fallback(user_lang: str) -> str:
+    return "Недостаточно данных для анализа." if user_lang == "ru" else "Insufficient data for analysis."
+
+
+def _sanitize_ticker_narrative(narrative: str, user_lang: str) -> str:
+    text = (narrative or "").strip()
+    if not text:
+        return _narrative_fallback(user_lang)
+    # Guardrail: block metric restatements and mixed-script garbage.
+    if re.search(r"\d", text) or _CJK_RE.search(text):
+        return _narrative_fallback(user_lang)
+    return text
+
+
+def _build_deterministic_ticker_overview(ticker_data: Dict[str, Any], user_lang: str) -> str:
+    token_type = str(ticker_data.get("type") or "token").lower()
+    is_jetton = token_type == "jetton"
+    if user_lang == "ru":
+        first = "Это джеттон в экосистеме TON." if is_jetton else "Это токен в экосистеме TON."
+        second = "Обзор сформирован только по подтверждённым данным выше, без дополнительных предположений."
+        return f"{first} {second}"
+    first = "This is a TON ecosystem jetton." if is_jetton else "This is a TON ecosystem token."
+    second = "This overview is based only on the verified data shown above, with no additional assumptions."
+    return f"{first} {second}"
 
 
 def _is_ticker_context_strong(text: str) -> bool:
@@ -452,7 +554,11 @@ class ChatRequest(BaseModel):
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "message": "AI Chat API is running"}
+    return {
+        "status": "ok",
+        "message": "AI Chat API is running",
+        "response_format_version": RESPONSE_FORMAT_VERSION,
+    }
 
 
 def _normalize_provider() -> str:
@@ -630,6 +736,7 @@ async def health():
         "status": "ok" if overall_ok else "degraded",
         "service": "ai-backend",
         "provider": provider,
+        "response_format_version": RESPONSE_FORMAT_VERSION,
         "dependencies": {
             "rag": rag_check,
             "llm": llm_check,
@@ -671,6 +778,8 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
     ticker_mode = False
     ticker_symbol = None
     ticker_data = None
+    ticker_facts_text = None
+    ticker_analysis_heading = None
     
     # Get last user message
     user_last = next((m.content for m in reversed(request.messages) if m.role == "user"), "")
@@ -715,6 +824,13 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
         # If error_code == "not_found" but context is NOT strong,
         # fall through to normal LLM answer (user might be asking about something else)
     
+    # STEP 2: Build deterministic facts block for ticker mode
+    if ticker_mode and ticker_data:
+        ticker_facts_text = _build_ticker_facts_block(ticker_data, ticker_symbol, user_lang)
+        ticker_analysis_heading = "\n💡 Обзор:" if user_lang == "ru" else "\n💡 Overview:"
+        deterministic_overview = _build_deterministic_ticker_overview(ticker_data, user_lang)
+        return stream_text_response(f"{ticker_facts_text}\n\n{ticker_analysis_heading}\n{deterministic_overview}")
+
     # STEP 2: Try general RAG query if not in ticker mode
     if RAG_URL and not ticker_mode and user_last:
         try:
@@ -742,60 +858,41 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
     messages_dict = []
     
     if ticker_mode and ticker_data:
-        # Ticker mode: inject verified facts with strict formatting rules
-
-        include_source = _user_asked_for_source(user_last)
-
-        # Extract and format facts
-        total_supply_raw = _to_int(ticker_data.get("total_supply"))
-        holders_raw = _to_int(ticker_data.get("holders"))
-        tx_24h_raw = _to_int(ticker_data.get("tx_24h"))
-
-        facts = {
+        # Ticker mode: facts are rendered deterministically; LLM writes analysis only.
+        # Build MINIMAL facts for overview generation (no numbers to tempt the model)
+        facts_for_overview = {
             "symbol": ticker_data.get("symbol") or ticker_symbol,
-            "name": ticker_data.get("name") or "Unknown",
-            "type": ticker_data.get("type") or "Unknown",
-            "total_supply": ticker_data.get("total_supply"),
-            "total_supply_formatted": _format_int_with_commas(total_supply_raw),
-            "total_supply_compact": _format_compact_number(total_supply_raw),
-            "holders": ticker_data.get("holders"),
-            "holders_formatted": _format_int_with_commas(holders_raw),
-            "tx_24h": ticker_data.get("tx_24h"),
-            "tx_24h_formatted": _format_int_with_commas(tx_24h_raw),
-            "decimals": ticker_data.get("decimals"),
+            "type": ticker_data.get("type") or "token",
         }
+        
+        # Only add last_activity if present (to allow "recent activity" context)
+        last_activity = ticker_data.get("last_activity")
+        if last_activity:
+            facts_for_overview["last_activity"] = last_activity
 
-        if include_source:
-            facts["source"] = ticker_data.get("source", "tokens.swap.coffee")
-
-        # Remove None values
-        facts = {k: v for k, v in facts.items() if v is not None}
-
-        lang_lock = "Russian" if user_lang == "ru" else "English"
-
-        # Strict instruction prompt
         ticker_prompt = (
-            f"Reply ONLY in {lang_lock}.\n"
-            "Reply in the same language as the user's latest message (detect RU/EN from that message).\n"
-            "Use ONLY the facts provided in <REFERENCE_FACTS> below.\n"
-            "Use a detailed style in 3-5 natural sentences.\n"
-            "When available, include: total supply, holders count, and 24h transactions.\n"
-            "If one of those fields is missing, say that specific metric is not available.\n"
-            "For numeric values, prefer human-friendly formatting (e.g., commas: 545,217,356,060,904,508,815).\n"
-            "If both raw and formatted values exist, prefer the formatted values in your answer.\n"
-            "DO NOT output <REFERENCE_FACTS> tags, JSON structure, field names, or labels.\n"
-            "DO NOT quote or copy the XML/JSON structure.\n"
-            "If you are about to output '<REFERENCE_FACTS>' or any tag, STOP and rewrite in plain language.\n"
-            "Do not mention the data source unless the user explicitly asked for it.\n"
-            "In Russian, avoid awkward declensions after huge numbers; use neutral phrasing like 'Общий выпуск: ...'.\n"
-            "If a fact is missing or null, say it's 'unknown' or 'not available' — do not invent data.\n"
-            "Example good answer: 'DOGS is a token on TON with 100M supply and 50K holders. It has been active with 1,200 transactions today.'\n"
-            "Example bad answer: 'TICKER_FACTS\\nType: Token\\nSupply: 100M'"
+            f"Reply ONLY in {'Russian' if user_lang == 'ru' else 'English'}.\n"
+            "Write 2-4 sentences of safe qualitative analysis for this token type.\n"
+            "\n"
+            "STRICT RULES:\n"
+            "- DO NOT mention any numbers, metrics, or statistics\n"
+            "- DO NOT repeat facts already shown above\n"
+            "- DO NOT invent facts not in <REFERENCE_FACTS> (no claims about Telegram, exchanges, listings, control, profitability, mass adoption)\n"
+            "- DO NOT use any non-Russian characters if Russian mode (no English, Chinese, Arabic, etc.)\n"
+            "- DO NOT use any non-English characters if English mode (no Russian, Chinese, etc.)\n"
+            "- Focus ONLY on general characteristics that apply to this TOKEN TYPE\n"
+            "- Do NOT make claims about specific adoption, popularity, or success\n"
+            "\n"
+            "If you cannot write 2-4 safe sentences with the data provided, output exactly:\n"
+            f"{'Недостаточно данных для анализа.' if user_lang == 'ru' else 'Insufficient data for analysis.'}\n"
+            "\n"
+            "Good example (EN): 'This jetton operates within the TON blockchain ecosystem. The token structure indicates standard fungible asset characteristics.'\n"
+            "Bad example (EN): 'This token has massive adoption with millions of holders.' (invents claims not in data)\n"
         )
         
         reference_facts = (
             "<REFERENCE_FACTS>\n"
-            + json.dumps(facts, ensure_ascii=False, indent=2)
+            + json.dumps(facts_for_overview, ensure_ascii=False, indent=2)
             + "\n</REFERENCE_FACTS>"
         )
         
@@ -889,11 +986,22 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
     # STREAM RESPONSE FROM LLM PROVIDER
     # ========================================================================
 
+    def _combine_ticker_output(narrative: str) -> str:
+        if not ticker_facts_text:
+            return narrative
+        narrative_clean = _sanitize_ticker_narrative(narrative, user_lang)
+        return f"{ticker_facts_text}\n\n{ticker_analysis_heading}\n{narrative_clean}"
+
     async def generate_ollama_response():
         inference_start = time.perf_counter()
         first_token_logged = False
+        prefix_sent = False
 
         async with httpx.AsyncClient(timeout=60.0) as client:
+            if ticker_facts_text:
+                prefix = f"{ticker_facts_text}\n\n{ticker_analysis_heading}\n"
+                yield json.dumps({"token": prefix, "done": False}) + "\n"
+                prefix_sent = True
             async with client.stream(
                 "POST",
                 f"{OLLAMA_URL}/api/chat",
@@ -911,7 +1019,17 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
                     except Exception:
                         error_detail = str(response.status_code)
 
-                    yield json.dumps({"error": f"Ollama error: {error_detail}"}) + "\n"
+                    if ticker_facts_text:
+                        fallback = _combine_ticker_output(
+                            "Анализ недоступен в данный момент."
+                            if user_lang == "ru"
+                            else "Analysis is unavailable right now."
+                        )
+                        if not prefix_sent:
+                            yield json.dumps({"token": f"{ticker_facts_text}\n\n{ticker_analysis_heading}\n", "done": False}) + "\n"
+                        yield json.dumps({"response": fallback, "done": True}) + "\n"
+                    else:
+                        yield json.dumps({"error": f"Ollama error: {error_detail}"}) + "\n"
                     return
 
                 full_response = ""
@@ -931,12 +1049,15 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
                                     first_token_logged = True
 
                                 full_response += content
-                                yield json.dumps({"token": content, "done": data.get("done", False)}) + "\n"
+                                # In ticker mode, buffer narrative and emit only vetted final output.
+                                if not ticker_facts_text:
+                                    # Keep token chunks non-terminal so clients wait for final `response` payload.
+                                    yield json.dumps({"token": content, "done": False}) + "\n"
 
                         if data.get("done", False):
                             total_ms = int((time.perf_counter() - inference_start) * 1000)
                             logger.info(f"Total time: {total_ms}ms, model={model}")
-                            yield json.dumps({"response": full_response, "done": True}) + "\n"
+                            yield json.dumps({"response": _combine_ticker_output(full_response), "done": True}) + "\n"
                             break
 
                     except json.JSONDecodeError:
@@ -951,12 +1072,17 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
         inference_start = time.perf_counter()
         first_token_logged = False
         full_response = ""
+        prefix_sent = False
         headers = {
             "Authorization": f"Bearer {OPENAI_API_KEY}",
             "Content-Type": "application/json",
         }
 
         async with httpx.AsyncClient(timeout=60.0) as client:
+            if ticker_facts_text:
+                prefix = f"{ticker_facts_text}\n\n{ticker_analysis_heading}\n"
+                yield json.dumps({"token": prefix, "done": False}) + "\n"
+                prefix_sent = True
             if request.stream:
                 async with client.stream(
                     "POST",
@@ -977,7 +1103,17 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
                                 error_detail = error_obj.get("message", error_detail)
                         except Exception:
                             pass
-                        yield json.dumps({"error": f"OpenAI error: {error_detail}"}) + "\n"
+                        if ticker_facts_text:
+                            fallback = _combine_ticker_output(
+                                "Анализ недоступен в данный момент."
+                                if user_lang == "ru"
+                                else "Analysis is unavailable right now."
+                            )
+                            if not prefix_sent:
+                                yield json.dumps({"token": f"{ticker_facts_text}\n\n{ticker_analysis_heading}\n", "done": False}) + "\n"
+                            yield json.dumps({"response": fallback, "done": True}) + "\n"
+                        else:
+                            yield json.dumps({"error": f"OpenAI error: {error_detail}"}) + "\n"
                         return
 
                     async for line in response.aiter_lines():
@@ -1002,11 +1138,13 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
                                 logger.info(f"First token: {ttft_ms}ms, model={model}")
                                 first_token_logged = True
                             full_response += content
-                            yield json.dumps({"token": content, "done": False}) + "\n"
+                            # In ticker mode, buffer narrative and emit only vetted final output.
+                            if not ticker_facts_text:
+                                yield json.dumps({"token": content, "done": False}) + "\n"
 
                     total_ms = int((time.perf_counter() - inference_start) * 1000)
                     logger.info(f"Total time: {total_ms}ms, model={model}")
-                    yield json.dumps({"response": full_response, "done": True}) + "\n"
+                    yield json.dumps({"response": _combine_ticker_output(full_response), "done": True}) + "\n"
                     return
 
             response = await client.post(
@@ -1023,7 +1161,17 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
                         error_detail = error_obj.get("message", error_detail)
                 except Exception:
                     pass
-                yield json.dumps({"error": f"OpenAI error: {error_detail}"}) + "\n"
+                if ticker_facts_text:
+                    fallback = _combine_ticker_output(
+                        "Анализ недоступен в данный момент."
+                        if user_lang == "ru"
+                        else "Analysis is unavailable right now."
+                    )
+                    if not prefix_sent:
+                        yield json.dumps({"token": f"{ticker_facts_text}\n\n{ticker_analysis_heading}\n", "done": False}) + "\n"
+                    yield json.dumps({"response": fallback, "done": True}) + "\n"
+                else:
+                    yield json.dumps({"error": f"OpenAI error: {error_detail}"}) + "\n"
                 return
 
             data = response.json()
@@ -1031,8 +1179,9 @@ async def chat(request: ChatRequest, api_key: str = Depends(verify_api_key)):
             if choices:
                 message = choices[0].get("message") or {}
                 full_response = message.get("content", "") or ""
-            yield json.dumps({"token": full_response, "done": False}) + "\n"
-            yield json.dumps({"response": full_response, "done": True}) + "\n"
+            if full_response:
+                yield json.dumps({"token": full_response, "done": False}) + "\n"
+            yield json.dumps({"response": _combine_ticker_output(full_response), "done": True}) + "\n"
 
     async def generate_response():
         try:
