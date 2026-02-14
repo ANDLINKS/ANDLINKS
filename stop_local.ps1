@@ -54,9 +54,30 @@ function Kill-BotProcess {
   Stop-Pids $pids "bot.py"
 }
 
+function Kill-BackendPythonByCommand {
+  Write-Host "Checking local uvicorn python processes..."
+  $targets = @(
+    "uvicorn main:app --host 127.0.0.1 --port 8000",
+    "uvicorn main:app --host 127.0.0.1 --port 8001"
+  )
+  $backendPids = Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+    Where-Object {
+      $cmd = $_.CommandLine
+      if (-not $cmd) { return $false }
+      foreach ($target in $targets) {
+        if ($cmd -like "*$target*") { return $true }
+      }
+      return $false
+    } |
+    Select-Object -ExpandProperty ProcessId -Unique
+
+  Stop-Pids $backendPids "local uvicorn backend"
+}
+
 # Always stop backend + rag
 Kill-Port 8000
 Kill-Port 8001
+Kill-BackendPythonByCommand
 Kill-BotProcess
 
 if ($StopOllama) {

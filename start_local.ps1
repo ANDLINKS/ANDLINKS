@@ -49,8 +49,11 @@ if (-not (Test-Path -LiteralPath $venvPython)) {
 $env:API_KEY        = "my-local-dev-secret"
 $env:RAG_URL        = "http://127.0.0.1:8001"
 $env:AI_BACKEND_URL = "http://127.0.0.1:8000"
+$env:LLM_PROVIDER   = "ollama"
 $env:OLLAMA_URL     = "http://127.0.0.1:11434"
 $env:OLLAMA_MODEL   = "qwen2.5:1.5b"
+# Keep local startup deterministic even if OpenAI vars exist in host env.
+if (Test-Path Env:OPENAI_API_KEY) { Remove-Item Env:OPENAI_API_KEY -ErrorAction SilentlyContinue }
 $env:BOT_TOKEN      = "8424280939:AAF5LpTE4p1roIU61NWAJJt7dKnYswaNFls"
 
 $ragDir = Join-Path $root "rag\backend"

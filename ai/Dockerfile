@@ -27,7 +27,7 @@ COPY backend/ ./backend/
 
 # Copy start script
 COPY start.sh ./
-RUN chmod +x start.sh
+RUN sed -i 's/\r$//' start.sh && chmod +x start.sh
 
 # Expose ports
 # 8000 for FastAPI, 11434 for Ollama (internal only)

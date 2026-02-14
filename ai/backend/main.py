@@ -488,14 +488,17 @@ def _is_ticker_context_strong(text: str) -> bool:
 # ============================================================================
 
 API_KEY = os.getenv("API_KEY")
-if not API_KEY:
-    raise ValueError("API_KEY environment variable must be set for API security")
 
 
 def verify_api_key(x_api_key: Optional[str] = Header(None, alias="X-API-Key")):
     """
     Verify API key from X-API-Key header
     """
+    if not API_KEY:
+        raise HTTPException(
+            status_code=503,
+            detail="API key authentication is not configured on this deployment.",
+        )
     if not x_api_key:
         raise HTTPException(
             status_code=401,
@@ -737,6 +740,9 @@ async def health():
         "service": "ai-backend",
         "provider": provider,
         "response_format_version": RESPONSE_FORMAT_VERSION,
+        "security": {
+            "api_key_configured": bool(API_KEY),
+        },
         "dependencies": {
             "rag": rag_check,
             "llm": llm_check,
